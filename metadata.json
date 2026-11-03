@@ -1,0 +1,6 @@
+{
+  "name": "RoughDraft",
+  "description": "A fast, tactile low-fidelity UI sketching and wireframing studio for rapid screen layouts and clickable prototypes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

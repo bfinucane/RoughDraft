@@ -116,7 +116,18 @@ function loadInitialProject(): ProjectData {
     if (raw) {
       const parsed = JSON.parse(raw) as ProjectData;
       if (parsed && Array.isArray(parsed.screens) && parsed.screens.length > 0) {
-        return parsed;
+        return {
+          ...parsed,
+          screens: parsed.screens.map((scr) => ({
+            ...scr,
+            widgets: scr.widgets.map((w) =>
+              w.type === 'modal' &&
+              w.subtext === 'Are you sure you want to archive this workspace?'
+                ? { ...w, subtext: '' }
+                : w
+            ),
+          })),
+        };
       }
     }
   } catch {
@@ -135,6 +146,7 @@ export default function App() {
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingWidgetId, setEditingWidgetId] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<'text' | 'subtext'>('text');
   const [editingDraft, setEditingDraft] = useState<string>('');
 
   // Left palette state
@@ -143,7 +155,6 @@ export default function App() {
 
   // Canvas viewport state
   const [zoom, setZoom] = useState<number>(0.9);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isSpaceHeld, setIsSpaceHeld] = useState(false);
   const [guides, setGuides] = useState<AlignmentGuide[]>([]);
   const [marqueeRect, setMarqueeRect] = useState<RectBox | null>(null);
@@ -157,6 +168,7 @@ export default function App() {
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const mainViewportRef = useRef<HTMLElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const interactionRef = useRef<DragInteraction | null>(null);
   const inlineInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
@@ -173,6 +185,17 @@ export default function App() {
       setActiveScreenId(project.screens[0].id);
     }
   }, [project.screens, activeScreenId]);
+
+  const centerCanvasScroll = useCallback(() => {
+    const el = mainViewportRef.current;
+    if (!el) return;
+    el.scrollLeft = Math.max(0, Math.round((el.scrollWidth - el.clientWidth) / 2));
+    el.scrollTop = Math.max(0, Math.round((el.scrollHeight - el.clientHeight) / 2));
+  }, []);
+
+  useEffect(() => {
+    requestAnimationFrame(centerCanvasScroll);
+  }, [activeScreen.id, centerCanvasScroll]);
 
   // Autosave to localStorage
   useEffect(() => {
@@ -355,6 +378,7 @@ export default function App() {
         align: stencil.defaultProps.align,
         fontSize: stencil.defaultProps.fontSize,
         direction: stencil.defaultProps.direction,
+        scrollPos: stencil.defaultProps.scrollPos,
       };
 
       commitProject((prev) => ({
@@ -728,14 +752,54 @@ export default function App() {
     setSelectedIds([]);
   };
 
-  // Inline Double-Click Editing (works directly inside bound groups too!)
-  const startInlineEdit = (widget: WireframeWidget) => {
+  // Inline Double-Click Editing (zone-aware for header vs body/placeholder/links)
+  const startInlineEdit = (
+    widget: WireframeWidget,
+    clickPoint?: { x: number; y: number }
+  ) => {
+    if (widget.type === 'vscrollbar' || widget.type === 'hscrollbar') {
+      const cur = widget.scrollPos ?? 20;
+      const next = cur < 40 ? 50 : cur < 90 ? 100 : 0;
+      updateWidget(widget.id, { scrollPos: next });
+      return;
+    }
     if (widget.type === 'divider' || widget.type === 'mobile' || widget.type === 'arrow') {
       return;
     }
+
+    let field: 'text' | 'subtext' = 'text';
+    if (widget.type === 'browser') {
+      field = 'subtext';
+    } else if (widget.type === 'modal' && clickPoint && clickPoint.y > widget.y + 44) {
+      field = 'subtext';
+    } else if (
+      widget.type === 'input' &&
+      clickPoint &&
+      widget.h >= 52 &&
+      clickPoint.y > widget.y + 22
+    ) {
+      field = 'subtext';
+    } else if (widget.type === 'navbar' && clickPoint && clickPoint.x > widget.x + 180) {
+      field = 'subtext';
+    } else if (
+      widget.type === 'box' &&
+      widget.subtext &&
+      clickPoint &&
+      clickPoint.y > widget.y + widget.h / 2
+    ) {
+      field = 'subtext';
+    }
+
     setEditingWidgetId(widget.id);
+    setEditingField(field);
     setEditingDraft(
-      widget.type === 'browser' ? widget.subtext || widget.text : widget.text
+      field === 'subtext'
+        ? widget.subtext !== undefined
+          ? widget.subtext
+          : widget.type === 'browser'
+          ? widget.text
+          : ''
+        : widget.text
     );
     requestAnimationFrame(() => {
       inlineInputRef.current?.focus();
@@ -747,14 +811,14 @@ export default function App() {
     if (!editingWidgetId) return;
     const target = activeScreen.widgets.find((w) => w.id === editingWidgetId);
     if (target) {
-      if (target.type === 'browser') {
+      if (editingField === 'subtext') {
         updateWidget(target.id, { subtext: editingDraft });
       } else {
         updateWidget(target.id, { text: editingDraft });
       }
     }
     setEditingWidgetId(null);
-  }, [activeScreen.widgets, editingDraft, editingWidgetId, updateWidget]);
+  }, [activeScreen.widgets, editingDraft, editingField, editingWidgetId, updateWidget]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -900,10 +964,11 @@ export default function App() {
       const drag = interactionRef.current;
       if (!drag) return;
 
-      if (drag.mode === 'pan' && drag.initialPan) {
+      if (drag.mode === 'pan' && drag.initialPan && mainViewportRef.current) {
         const dx = e.clientX - drag.startClientX;
         const dy = e.clientY - drag.startClientY;
-        setPan({ x: drag.initialPan.x + dx, y: drag.initialPan.y + dy });
+        mainViewportRef.current.scrollLeft = drag.initialPan.x - dx;
+        mainViewportRef.current.scrollTop = drag.initialPan.y - dy;
         return;
       }
 
@@ -1495,9 +1560,9 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setZoom(1);
-                  setPan({ x: 0, y: 0 });
+                  requestAnimationFrame(centerCanvasScroll);
                 }}
-                title="Reset Zoom to 100%"
+                title="Reset Zoom to 100% and Center"
                 className="font-mono-tabular px-2 text-xs font-medium text-slate-700 hover:text-slate-900 whitespace-nowrap"
               >
                 {Math.round(zoom * 100)}%
@@ -1670,14 +1735,18 @@ export default function App() {
           </aside>
         )}
 
-        {/* Center Viewport: Artboard Canvas */}
+        {/* Center Viewport: Artboard Canvas with Horizontal & Vertical Scrollbars */}
         <main
-          className={`relative flex-1 overflow-auto ${
-            isPresentMode ? 'bg-slate-900' : 'canvas-dot-backdrop'
+          ref={mainViewportRef}
+          className={`relative flex-1 ${
+            isPresentMode
+              ? 'overflow-auto bg-slate-900'
+              : 'studio-canvas-scroll canvas-dot-backdrop'
           } ${isSpaceHeld ? 'cursor-grab' : ''}`}
           onMouseDown={(e) => {
             if (isSpaceHeld || e.button === 1) {
               e.preventDefault();
+              const vp = mainViewportRef.current;
               interactionRef.current = {
                 mode: 'pan',
                 startClientX: e.clientX,
@@ -1686,7 +1755,10 @@ export default function App() {
                 startCanvasY: 0,
                 initialProject: project,
                 initialWidgets: {},
-                initialPan: { ...pan },
+                initialPan: {
+                  x: vp ? vp.scrollLeft : 0,
+                  y: vp ? vp.scrollTop : 0,
+                },
                 hasMoved: false,
               };
               return;
@@ -1741,14 +1813,29 @@ export default function App() {
             </div>
           )}
 
-          {/* Artboard Positioning Wrapper */}
-          <div className="flex min-h-full min-w-full items-center justify-center p-10">
+          {/* Artboard Scrollable Stage */}
+          <div
+            className="flex p-16"
+            style={{
+              minWidth: isPresentMode
+                ? '100%'
+                : Math.round(activeScreen.width * zoom + 380),
+              minHeight: isPresentMode
+                ? '100%'
+                : Math.round(activeScreen.height * zoom + 280),
+            }}
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget && !isPresentMode && !isSpaceHeld) {
+                setSelectedIds([]);
+                commitInlineEdit();
+              }
+            }}
+          >
             <div
-              className="relative shrink-0 bg-white shadow-sm ring-1 ring-slate-300/80 transition-shadow"
+              className="relative m-auto shrink-0 bg-white shadow-sm ring-1 ring-slate-300/80 transition-shadow"
               style={{
                 width: activeScreen.width * zoom,
                 height: activeScreen.height * zoom,
-                transform: `translate(${pan.x}px, ${pan.y}px)`,
               }}
               onDragOver={(e) => {
                 if (isPresentMode) return;
@@ -1946,7 +2033,8 @@ export default function App() {
                       onDoubleClick={(e) => {
                         if (isPresentMode) return;
                         e.stopPropagation();
-                        startInlineEdit(widget);
+                        const pt = clientToArtboard(e.clientX, e.clientY);
+                        startInlineEdit(widget, pt);
                       }}
                     >
                       <rect
@@ -2160,14 +2248,18 @@ export default function App() {
                   className="absolute z-30"
                   style={{
                     left: editingWidget.x * zoom,
-                    top: editingWidget.y * zoom,
+                    top:
+                      (editingWidget.type === 'modal' && editingField === 'subtext'
+                        ? editingWidget.y + 52
+                        : editingWidget.y) * zoom,
                     width: Math.max(180, editingWidget.w * zoom),
                   }}
                 >
                   {editingWidget.type === 'table' ||
                   editingWidget.type === 'checkbox' ||
                   editingWidget.type === 'paragraph' ||
-                  editingWidget.type === 'note' ? (
+                  editingWidget.type === 'note' ||
+                  (editingWidget.type === 'modal' && editingField === 'subtext') ? (
                     <textarea
                       ref={(el) => {
                         inlineInputRef.current = el;
@@ -2257,6 +2349,7 @@ export default function App() {
             onUpdateGroupBounds={handleUpdateGroupBounds}
             onToggleGroupLock={handleToggleGroupLock}
             onGroupLayerAction={handleGroupLayerAction}
+            onSelectSingleWidget={(id) => setSelectedIds([id])}
           />
         )}
       </div>

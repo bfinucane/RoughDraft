@@ -4,6 +4,8 @@ import {
   ArrowRight,
   CheckSquare,
   ChevronDownSquare,
+  ChevronsLeftRight,
+  ChevronsUpDown,
   CircleUserRound,
   Columns3,
   CreditCard,
@@ -68,6 +70,10 @@ export const StencilIcon: React.FC<{ type: WidgetType; className?: string }> = (
       return <StickyNote className={className} />;
     case 'callout':
       return <MessageSquareWarning className={className} />;
+    case 'vscrollbar':
+      return <ChevronsUpDown className={className} />;
+    case 'hscrollbar':
+      return <ChevronsLeftRight className={className} />;
     default:
       return <Square className={className} />;
   }

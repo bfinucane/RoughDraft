@@ -198,7 +198,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
               fontSize={12}
               fill={INK_MUTED}
             >
-              {(subtext || text || 'https://example.com').slice(0, Math.floor(addrW / 7))}
+              {(subtext !== undefined ? subtext : text).slice(0, Math.floor(addrW / 7))}
             </text>
           </g>
         );
@@ -316,16 +316,18 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
               strokeWidth={1.8}
               fill="none"
             />
-            <text
-              x={x + 18}
-              y={y + 28}
-              fontFamily={fontFamily}
-              fontSize={16}
-              fontWeight={600}
-              fill={textOnFill}
-            >
-              {text || 'Modal Title'}
-            </text>
+            {text && (
+              <text
+                x={x + 18}
+                y={y + 28}
+                fontFamily={fontFamily}
+                fontSize={16}
+                fontWeight={600}
+                fill={textOnFill}
+              >
+                {text}
+              </text>
+            )}
             {/* Close X */}
             <path
               d={[
@@ -366,7 +368,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
               fontWeight={600}
               fill={textOnFill}
             >
-              {text || 'Button'}
+              {text}
             </text>
           </g>
         );
@@ -437,7 +439,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
               fontSize={14}
               fill={INK_MUTED}
             >
-              {(text || 'Search...').slice(0, Math.max(6, Math.floor((w - 44) / 7.5)))}
+              {(text || '').slice(0, Math.max(6, Math.floor((w - 44) / 7.5)))}
             </text>
           </g>
         );
@@ -471,7 +473,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
               fontSize={14}
               fill={textOnFill}
             >
-              {(text || 'Select option').slice(0, Math.max(6, Math.floor((w - 48) / 7.5)))}
+              {(text || '').slice(0, Math.max(6, Math.floor((w - 48) / 7.5)))}
             </text>
           </g>
         );
@@ -670,7 +672,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
       }
 
       case 'navbar': {
-        const links = (subtext || 'Home, Features, Pricing')
+        const links = (subtext !== undefined ? subtext : '')
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean);
@@ -678,16 +680,18 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
         return (
           <g>
             {renderRectBase(x, y, w, h, 'nav', fill, true, 2)}
-            <text
-              x={x + 20}
-              y={cy}
-              fontFamily={fontFamily}
-              fontSize={17}
-              fontWeight={700}
-              fill={textOnFill}
-            >
-              {text || 'Brand'}
-            </text>
+            {text && (
+              <text
+                x={x + 20}
+                y={cy}
+                fontFamily={fontFamily}
+                fontSize={17}
+                fontWeight={700}
+                fill={textOnFill}
+              >
+                {text}
+              </text>
+            )}
             {links.map((lnk, idx) => {
               const lx = x + w - 24 - (links.length - 1 - idx) * 92;
               const isAct = idx === (widget.activeIndex ?? 0);
@@ -742,7 +746,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
               fontWeight={700}
               fill={strokeColor}
             >
-              {text || 'Heading'}
+              {text}
             </text>
           </g>
         );
@@ -763,7 +767,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
         const fSize = widget.fontSize === 'sm' ? 12 : widget.fontSize === 'lg' ? 16 : 14;
         const maxChars = Math.max(12, Math.floor(w / (fSize * 0.56)));
         const maxLines = Math.max(1, Math.floor(h / (fSize * 1.45)));
-        const lines = wrapTextLines(text || 'Paragraph text...', maxChars, maxLines);
+        const lines = wrapTextLines(text, maxChars, maxLines);
         return (
           <g>
             {lines.map((ln, idx) => (
@@ -1029,7 +1033,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
       case 'note': {
         const fold = 18;
         const lines = wrapTextLines(
-          text || 'UX Note...',
+          text,
           Math.max(12, Math.floor((w - 24) / 7.5)),
           Math.max(2, Math.floor((h - 24) / 18))
         );
@@ -1098,6 +1102,260 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
             >
               {(text || '1').slice(0, 3)}
             </text>
+          </g>
+        );
+      }
+
+      case 'vscrollbar': {
+        const capH = Math.min(20, Math.max(12, Math.floor(h * 0.16)));
+        const innerH = Math.max(12, h - capH * 2 - 6);
+        const thumbH = Math.max(14, Math.round(innerH * 0.34));
+        const pct = Math.max(0, Math.min(100, widget.scrollPos ?? 20)) / 100;
+        const thumbY = y + capH + 3 + Math.round((innerH - thumbH) * pct);
+        const thumbW = Math.max(6, w - 6);
+        const cx = x + w / 2;
+        const thumbMidY = thumbY + thumbH / 2;
+
+        return (
+          <g>
+            {renderRectBase(x, y, w, h, 'vsb-track', fill, true, 1.9)}
+            {/* Top & bottom stepper dividers */}
+            <path
+              d={[
+                sketchLinePath(x + 1, y + capH, x + w - 1, y + capH, `${id}-vtdiv`, sketchStyle),
+                sketchLinePath(
+                  x + 1,
+                  y + h - capH,
+                  x + w - 1,
+                  y + h - capH,
+                  `${id}-vbdiv`,
+                  sketchStyle
+                ),
+              ].join(' ')}
+              stroke={strokeColor}
+              strokeWidth={1.6}
+              fill="none"
+            />
+            {/* Top chevron ▲ */}
+            <path
+              d={[
+                sketchLinePath(
+                  cx - 3.5,
+                  y + capH / 2 + 2,
+                  cx,
+                  y + capH / 2 - 2.5,
+                  `${id}-vuc1`,
+                  sketchStyle
+                ),
+                sketchLinePath(
+                  cx,
+                  y + capH / 2 - 2.5,
+                  cx + 3.5,
+                  y + capH / 2 + 2,
+                  `${id}-vuc2`,
+                  sketchStyle
+                ),
+              ].join(' ')}
+              stroke={strokeColor}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              fill="none"
+            />
+            {/* Bottom chevron ▼ */}
+            <path
+              d={[
+                sketchLinePath(
+                  cx - 3.5,
+                  y + h - capH / 2 - 2,
+                  cx,
+                  y + h - capH / 2 + 2.5,
+                  `${id}-vdc1`,
+                  sketchStyle
+                ),
+                sketchLinePath(
+                  cx,
+                  y + h - capH / 2 + 2.5,
+                  cx + 3.5,
+                  y + h - capH / 2 - 2,
+                  `${id}-vdc2`,
+                  sketchStyle
+                ),
+              ].join(' ')}
+              stroke={strokeColor}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              fill="none"
+            />
+            {/* Draggable-look thumb */}
+            <path
+              d={
+                sketchRectPaths(x + 3, thumbY, thumbW, thumbH, `${id}-vth`, sketchStyle)
+                  .fillPath
+              }
+              fill={fill === 'dark' ? '#94a3b8' : '#cbd5e1'}
+            />
+            <path
+              d={
+                sketchRectPaths(x + 3, thumbY, thumbW, thumbH, `${id}-vth`, sketchStyle)
+                  .strokePath
+              }
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth={1.6}
+            />
+            {thumbH >= 22 && (
+              <path
+                d={[
+                  sketchLinePath(
+                    cx - 3,
+                    thumbMidY - 3,
+                    cx + 3,
+                    thumbMidY - 3,
+                    `${id}-vg1`,
+                    sketchStyle
+                  ),
+                  sketchLinePath(cx - 3, thumbMidY, cx + 3, thumbMidY, `${id}-vg2`, sketchStyle),
+                  sketchLinePath(
+                    cx - 3,
+                    thumbMidY + 3,
+                    cx + 3,
+                    thumbMidY + 3,
+                    `${id}-vg3`,
+                    sketchStyle
+                  ),
+                ].join(' ')}
+                stroke={strokeColor}
+                strokeWidth={1.3}
+                strokeLinecap="round"
+              />
+            )}
+          </g>
+        );
+      }
+
+      case 'hscrollbar': {
+        const capW = Math.min(20, Math.max(12, Math.floor(w * 0.16)));
+        const innerW = Math.max(12, w - capW * 2 - 6);
+        const thumbW = Math.max(14, Math.round(innerW * 0.34));
+        const pct = Math.max(0, Math.min(100, widget.scrollPos ?? 20)) / 100;
+        const thumbX = x + capW + 3 + Math.round((innerW - thumbW) * pct);
+        const thumbH = Math.max(6, h - 6);
+        const cy = y + h / 2;
+        const thumbMidX = thumbX + thumbW / 2;
+
+        return (
+          <g>
+            {renderRectBase(x, y, w, h, 'hsb-track', fill, true, 1.9)}
+            {/* Left & right stepper dividers */}
+            <path
+              d={[
+                sketchLinePath(x + capW, y + 1, x + capW, y + h - 1, `${id}-hldiv`, sketchStyle),
+                sketchLinePath(
+                  x + w - capW,
+                  y + 1,
+                  x + w - capW,
+                  y + h - 1,
+                  `${id}-hrdiv`,
+                  sketchStyle
+                ),
+              ].join(' ')}
+              stroke={strokeColor}
+              strokeWidth={1.6}
+              fill="none"
+            />
+            {/* Left chevron ◀ */}
+            <path
+              d={[
+                sketchLinePath(
+                  x + capW / 2 + 2,
+                  cy - 3.5,
+                  x + capW / 2 - 2.5,
+                  cy,
+                  `${id}-hlc1`,
+                  sketchStyle
+                ),
+                sketchLinePath(
+                  x + capW / 2 - 2.5,
+                  cy,
+                  x + capW / 2 + 2,
+                  cy + 3.5,
+                  `${id}-hlc2`,
+                  sketchStyle
+                ),
+              ].join(' ')}
+              stroke={strokeColor}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              fill="none"
+            />
+            {/* Right chevron ▶ */}
+            <path
+              d={[
+                sketchLinePath(
+                  x + w - capW / 2 - 2,
+                  cy - 3.5,
+                  x + w - capW / 2 + 2.5,
+                  cy,
+                  `${id}-hrc1`,
+                  sketchStyle
+                ),
+                sketchLinePath(
+                  x + w - capW / 2 + 2.5,
+                  cy,
+                  x + w - capW / 2 - 2,
+                  cy + 3.5,
+                  `${id}-hrc2`,
+                  sketchStyle
+                ),
+              ].join(' ')}
+              stroke={strokeColor}
+              strokeWidth={1.8}
+              strokeLinecap="round"
+              fill="none"
+            />
+            {/* Draggable-look thumb */}
+            <path
+              d={
+                sketchRectPaths(thumbX, y + 3, thumbW, thumbH, `${id}-hth`, sketchStyle)
+                  .fillPath
+              }
+              fill={fill === 'dark' ? '#94a3b8' : '#cbd5e1'}
+            />
+            <path
+              d={
+                sketchRectPaths(thumbX, y + 3, thumbW, thumbH, `${id}-hth`, sketchStyle)
+                  .strokePath
+              }
+              fill="none"
+              stroke={strokeColor}
+              strokeWidth={1.6}
+            />
+            {thumbW >= 22 && (
+              <path
+                d={[
+                  sketchLinePath(
+                    thumbMidX - 3,
+                    cy - 3,
+                    thumbMidX - 3,
+                    cy + 3,
+                    `${id}-hg1`,
+                    sketchStyle
+                  ),
+                  sketchLinePath(thumbMidX, cy - 3, thumbMidX, cy + 3, `${id}-hg2`, sketchStyle),
+                  sketchLinePath(
+                    thumbMidX + 3,
+                    cy - 3,
+                    thumbMidX + 3,
+                    cy + 3,
+                    `${id}-hg3`,
+                    sketchStyle
+                  ),
+                ].join(' ')}
+                stroke={strokeColor}
+                strokeWidth={1.3}
+                strokeLinecap="round"
+              />
+            )}
           </g>
         );
       }

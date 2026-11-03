@@ -18,7 +18,9 @@ export type WidgetType =
   | 'divider'
   | 'arrow'
   | 'note'
-  | 'callout';
+  | 'callout'
+  | 'vscrollbar'
+  | 'hscrollbar';
 
 export type WidgetCategory = 'Containers' | 'Controls' | 'Content' | 'Markup';
 
@@ -59,6 +61,8 @@ export interface WireframeWidget {
   linkToScreenId?: string;
   /** Bound group identifier when multiple widgets are grouped as one entity */
   groupId?: string;
+  /** Scrollbar thumb position percentage (0 to 100) */
+  scrollPos?: number;
   /** Prevent accidental dragging on background frames */
   locked?: boolean;
 }

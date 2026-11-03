@@ -47,6 +47,7 @@ interface InspectorPanelProps {
   ) => void;
   onToggleGroupLock: (groupId: string, locked: boolean) => void;
   onGroupLayerAction: (groupId: string, action: 'front' | 'back') => void;
+  onSelectSingleWidget: (id: string) => void;
 }
 
 const FILL_OPTIONS: Array<{ value: FillTone; label: string; swatchClass: string }> = [
@@ -86,6 +87,7 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onUpdateGroupBounds,
   onToggleGroupLock,
   onGroupLayerAction,
+  onSelectSingleWidget,
 }) => {
   const sharedGroupId =
     selectedWidgets.length > 1 &&
@@ -214,8 +216,33 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
             </div>
           </div>
 
+          <div className="border-t border-slate-100 pt-3">
+            <label className="mb-1.5 block text-xs font-medium text-slate-600">
+              Group Members (click to inspect)
+            </label>
+            <div className="max-h-40 space-y-1 overflow-y-auto">
+              {selectedWidgets.map((member) => {
+                const mStencil = getStencilByType(member.type);
+                const summary = member.text || member.subtext || mStencil.label;
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() => onSelectSingleWidget(member.id)}
+                    className="flex w-full items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-left text-xs text-slate-700 transition-colors hover:border-blue-600 hover:bg-blue-50/40"
+                  >
+                    <span className="truncate font-medium">{mStencil.label}</span>
+                    <span className="ml-2 max-w-[110px] truncate text-[11px] text-slate-400">
+                      {summary}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="border-t border-slate-100 pt-3 text-xs text-slate-500">
-            Tip: You can still double-click any individual text or table inside this group to edit its label directly.
+            Tip: Double-click any item on the canvas (or select a member above) to edit its text without ungrouping.
           </div>
         </div>
       </aside>
@@ -489,6 +516,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
       ? 'Placeholder Text'
       : w.type === 'navbar'
       ? 'Navigation Links (comma-separated)'
+      : w.type === 'modal'
+      ? 'Background Body Copy (optional)'
       : 'Secondary Text';
 
   const tabItems =
@@ -585,7 +614,11 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
         </div>
 
         {/* Content Editor */}
-        {w.type !== 'divider' && w.type !== 'mobile' && w.type !== 'arrow' && (
+        {w.type !== 'divider' &&
+          w.type !== 'mobile' &&
+          w.type !== 'arrow' &&
+          w.type !== 'vscrollbar' &&
+          w.type !== 'hscrollbar' && (
           <div>
             <label className="mb-1.5 block text-xs font-medium text-slate-600">
               {w.type === 'table'
@@ -594,6 +627,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                 ? 'Checklist Items ([x] or [ ])'
                 : w.type === 'tabs'
                 ? 'Tabs (comma-separated)'
+                : w.type === 'modal'
+                ? 'Modal Header Title'
                 : 'Label / Content'}
             </label>
             {isMultilineContent ? (
@@ -616,14 +651,26 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
 
         {hasSubtext && (
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">
-              {subtextLabel}
-            </label>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-medium text-slate-600">
+                {subtextLabel}
+              </label>
+              {w.subtext && (
+                <button
+                  type="button"
+                  onClick={() => onUpdateWidget(w.id, { subtext: '' })}
+                  className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline whitespace-nowrap"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
             <input
               type="text"
               value={w.subtext || ''}
+              placeholder={w.type === 'modal' ? 'Leave empty for blank dialog body' : ''}
               onChange={(e) => onUpdateWidget(w.id, { subtext: e.target.value })}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
             />
           </div>
         )}
@@ -716,6 +763,77 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
                   {sym}
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Scrollbar Orientation & Thumb Position */}
+        {(w.type === 'vscrollbar' || w.type === 'hscrollbar') && (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-slate-600">
+                Orientation
+              </label>
+              <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (w.type !== 'vscrollbar') {
+                      onUpdateWidget(w.id, {
+                        type: 'vscrollbar',
+                        w: Math.max(14, Math.min(48, w.h)),
+                        h: Math.max(64, w.w),
+                      });
+                    }
+                  }}
+                  className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                    w.type === 'vscrollbar'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Vertical
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (w.type !== 'hscrollbar') {
+                      onUpdateWidget(w.id, {
+                        type: 'hscrollbar',
+                        w: Math.max(64, w.h),
+                        h: Math.max(14, Math.min(48, w.w)),
+                      });
+                    }
+                  }}
+                  className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                    w.type === 'hscrollbar'
+                      ? 'bg-white text-slate-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Horizontal
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 flex items-center justify-between text-xs">
+                <span className="font-medium text-slate-600">Scroll Thumb Position</span>
+                <span className="font-mono-tabular text-slate-500">
+                  {Math.round(w.scrollPos ?? 20)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={w.scrollPos ?? 20}
+                onChange={(e) =>
+                  onUpdateWidget(w.id, { scrollPos: Number(e.target.value) })
+                }
+                className="w-full accent-blue-600"
+              />
             </div>
           </div>
         )}
@@ -828,7 +946,9 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
         {(w.type === 'button' ||
           w.type === 'input' ||
           w.type === 'select' ||
-          w.type === 'search') && (
+          w.type === 'search' ||
+          w.type === 'vscrollbar' ||
+          w.type === 'hscrollbar') && (
           <div className="flex items-center justify-between pt-1">
             <span className="text-xs font-medium text-slate-600">Disabled State</span>
             <input

@@ -34,3 +34,32 @@
   background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
   background-size: 20px 20px;
 }
+
+.studio-canvas-scroll {
+  overflow: scroll;
+  scrollbar-width: auto;
+  scrollbar-color: #94a3b8 #e2e8f0;
+}
+
+.studio-canvas-scroll::-webkit-scrollbar {
+  width: 13px;
+  height: 13px;
+}
+
+.studio-canvas-scroll::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+
+.studio-canvas-scroll::-webkit-scrollbar-corner {
+  background: #cbd5e1;
+}
+
+.studio-canvas-scroll::-webkit-scrollbar-thumb {
+  background-color: #94a3b8;
+  border-radius: 7px;
+  border: 3px solid #e2e8f0;
+}
+
+.studio-canvas-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #64748b;
+}

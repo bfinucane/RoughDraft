@@ -72,7 +72,7 @@ export const STENCIL_LIBRARY: StencilDefinition[] = [
     minH: 140,
     defaultProps: {
       text: 'Confirm Action',
-      subtext: 'Are you sure you want to archive this workspace?',
+      subtext: '',
       fill: 'white',
       bordered: true,
     },
@@ -189,6 +189,38 @@ export const STENCIL_LIBRARY: StencilDefinition[] = [
       fill: 'white',
     },
     hint: 'Brand title + comma-separated nav links',
+  },
+  {
+    type: 'vscrollbar',
+    label: 'Vertical Scrollbar',
+    category: 'Controls',
+    keywords: ['scrollbar', 'vertical', 'scroll', 'bar', 'track', 'vscroll'],
+    defaultW: 20,
+    defaultH: 220,
+    minW: 14,
+    minH: 64,
+    defaultProps: {
+      text: '',
+      fill: 'muted',
+      scrollPos: 20,
+    },
+    hint: 'Vertical scroll track with thumb and steppers',
+  },
+  {
+    type: 'hscrollbar',
+    label: 'Horizontal Scrollbar',
+    category: 'Controls',
+    keywords: ['scrollbar', 'horizontal', 'scroll', 'bar', 'track', 'hscroll'],
+    defaultW: 240,
+    defaultH: 20,
+    minW: 64,
+    minH: 14,
+    defaultProps: {
+      text: '',
+      fill: 'muted',
+      scrollPos: 20,
+    },
+    hint: 'Horizontal scroll track with thumb and steppers',
   },
 
   // Content

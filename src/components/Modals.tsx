@@ -230,6 +230,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
   const shortcuts = [
     ['/', 'Open Quick Add stencil launcher'],
     ['Double-click', 'Edit widget text / CSV rows inline'],
+    ['Ctrl / Cmd + B, I, U', 'Format text as bold, italic, or underline'],
     ['Shift + Click', 'Add or remove widget/group from selection'],
     ['Ctrl / Cmd + G', 'Group selected widgets into one entity'],
     ['Ctrl / Cmd + Shift + G', 'Ungroup selected group'],

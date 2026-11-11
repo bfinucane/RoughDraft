@@ -1,18 +1,28 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   AlignCenter,
   AlignLeft,
   AlignRight,
   ArrowDownToLine,
   ArrowUpToLine,
+  Bold,
+  CheckSquare,
+  Code,
   Copy,
   Group,
+  HelpCircle,
+  Italic,
   Link2,
   Lock,
+  Palette,
+  Strikethrough,
+  Table as TableIcon,
   Trash2,
+  Underline,
   Ungroup,
   Unlock,
 } from 'lucide-react';
+import { applyFormatToInput } from '../utils/textMarkup';
 import { DEVICE_DIMENSIONS, getStencilByType } from '../data/presets';
 import {
   DevicePreset,
@@ -89,6 +99,11 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
   onGroupLayerAction,
   onSelectSingleWidget,
 }) => {
+  const contentInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  const [showMarkupGuide, setShowMarkupGuide] = useState(false);
+  const [showColorMenu, setShowColorMenu] = useState(false);
+  const [showTableMenu, setShowTableMenu] = useState(false);
+
   const sharedGroupId =
     selectedWidgets.length > 1 &&
     selectedWidgets[0].groupId &&
@@ -620,26 +635,349 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           w.type !== 'vscrollbar' &&
           w.type !== 'hscrollbar' && (
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">
-              {w.type === 'table'
-                ? 'Table Rows (CSV lines)'
-                : w.type === 'checkbox'
-                ? 'Checklist Items ([x] or [ ])'
-                : w.type === 'tabs'
-                ? 'Tabs (comma-separated)'
-                : w.type === 'modal'
-                ? 'Modal Header Title'
-                : 'Label / Content'}
-            </label>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="block text-xs font-medium text-slate-600">
+                {w.type === 'table'
+                  ? 'Table Rows (CSV lines)'
+                  : w.type === 'checkbox'
+                  ? 'Checklist Items ([x] or [ ])'
+                  : w.type === 'tabs'
+                  ? 'Tabs (comma-separated)'
+                  : w.type === 'modal'
+                  ? 'Modal Header Title'
+                  : 'Label / Content'}
+              </label>
+              {(w.type === 'table' ||
+                w.type === 'paragraph' ||
+                w.type === 'heading' ||
+                w.type === 'note' ||
+                w.type === 'box') && (
+                <button
+                  type="button"
+                  onClick={() => setShowMarkupGuide(!showMarkupGuide)}
+                  className="flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                >
+                  <HelpCircle className="h-3 w-3" />
+                  <span>{showMarkupGuide ? 'Hide syntax' : 'Markup syntax'}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Formatting Toolbar */}
+            {(w.type === 'table' ||
+              w.type === 'paragraph' ||
+              w.type === 'heading' ||
+              w.type === 'note' ||
+              w.type === 'box') && (
+              <div className="mb-2 space-y-1.5">
+                <div className="flex flex-wrap items-center gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-1">
+                  <button
+                    type="button"
+                    title="Bold: *text* (Ctrl+B)"
+                    onClick={() =>
+                      applyFormatToInput(
+                        contentInputRef.current,
+                        w.text,
+                        '*',
+                        '*',
+                        'bold text',
+                        (text) => onUpdateWidget(w.id, { text })
+                      )
+                    }
+                    className="rounded p-1 text-slate-700 hover:bg-white hover:shadow-xs"
+                  >
+                    <Bold className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Italic: _text_ (Ctrl+I)"
+                    onClick={() =>
+                      applyFormatToInput(
+                        contentInputRef.current,
+                        w.text,
+                        '_',
+                        '_',
+                        'italic text',
+                        (text) => onUpdateWidget(w.id, { text })
+                      )
+                    }
+                    className="rounded p-1 text-slate-700 hover:bg-white hover:shadow-xs"
+                  >
+                    <Italic className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Underline: +text+ (Ctrl+U)"
+                    onClick={() =>
+                      applyFormatToInput(
+                        contentInputRef.current,
+                        w.text,
+                        '+',
+                        '+',
+                        'underline text',
+                        (text) => onUpdateWidget(w.id, { text })
+                      )
+                    }
+                    className="rounded p-1 text-slate-700 hover:bg-white hover:shadow-xs"
+                  >
+                    <Underline className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Strikethrough: ~text~"
+                    onClick={() =>
+                      applyFormatToInput(
+                        contentInputRef.current,
+                        w.text,
+                        '~',
+                        '~',
+                        'strikethrough',
+                        (text) => onUpdateWidget(w.id, { text })
+                      )
+                    }
+                    className="rounded p-1 text-slate-700 hover:bg-white hover:shadow-xs"
+                  >
+                    <Strikethrough className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Code: `code`"
+                    onClick={() =>
+                      applyFormatToInput(
+                        contentInputRef.current,
+                        w.text,
+                        '`',
+                        '`',
+                        'code',
+                        (text) => onUpdateWidget(w.id, { text })
+                      )
+                    }
+                    className="rounded p-1 text-slate-700 hover:bg-white hover:shadow-xs"
+                  >
+                    <Code className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Link: [link text]"
+                    onClick={() =>
+                      applyFormatToInput(
+                        contentInputRef.current,
+                        w.text,
+                        '[',
+                        ']',
+                        'link text',
+                        (text) => onUpdateWidget(w.id, { text })
+                      )
+                    }
+                    className="rounded p-1 text-slate-700 hover:bg-white hover:shadow-xs"
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                  </button>
+
+                  {/* Text Color dropdown toggle */}
+                  <button
+                    type="button"
+                    title="Color: {color:red}text{color}"
+                    onClick={() => {
+                      setShowColorMenu(!showColorMenu);
+                      setShowTableMenu(false);
+                    }}
+                    className={`rounded p-1 transition-colors ${
+                      showColorMenu
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-slate-700 hover:bg-white hover:shadow-xs'
+                    }`}
+                  >
+                    <Palette className="h-3.5 w-3.5" />
+                  </button>
+
+                  {/* Table directives toggle */}
+                  {w.type === 'table' && (
+                    <button
+                      type="button"
+                      title="Table cell directives ({bg:green}, {r}, [x])"
+                      onClick={() => {
+                        setShowTableMenu(!showTableMenu);
+                        setShowColorMenu(false);
+                      }}
+                      className={`ml-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+                        showTableMenu
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      <TableIcon className="h-3 w-3" />
+                      <span>Cell Tags</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Color sub-menu */}
+                {showColorMenu && (
+                  <div className="flex flex-wrap items-center gap-1 rounded-md border border-slate-200 bg-white p-1.5 shadow-xs">
+                    {[
+                      { name: 'red', label: 'Red', dotClass: 'bg-red-500' },
+                      { name: 'green', label: 'Green', dotClass: 'bg-emerald-600' },
+                      { name: 'blue', label: 'Blue', dotClass: 'bg-blue-600' },
+                      { name: 'amber', label: 'Amber', dotClass: 'bg-amber-500' },
+                      { name: 'purple', label: 'Purple', dotClass: 'bg-purple-600' },
+                      { name: 'muted', label: 'Muted', dotClass: 'bg-slate-500' },
+                    ].map((col) => (
+                      <button
+                        key={col.name}
+                        type="button"
+                        onClick={() => {
+                          applyFormatToInput(
+                            contentInputRef.current,
+                            w.text,
+                            `{color:${col.name}}`,
+                            `{color}`,
+                            `${col.label} text`,
+                            (text) => onUpdateWidget(w.id, { text })
+                          );
+                          setShowColorMenu(false);
+                        }}
+                        className="flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 hover:bg-slate-100"
+                      >
+                        <span className={`h-2 w-2 rounded-full ${col.dotClass}`} />
+                        <span>{col.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Table cell directives sub-menu */}
+                {w.type === 'table' && showTableMenu && (
+                  <div className="space-y-1.5 rounded-md border border-slate-200 bg-white p-2 text-[11px] shadow-xs">
+                    <div>
+                      <span className="mb-1 block text-[10px] font-medium text-slate-500">
+                        Cell Background Fill:
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          {
+                            code: '{bg:green}',
+                            label: 'Green',
+                            badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+                          },
+                          {
+                            code: '{bg:yellow}',
+                            label: 'Yellow',
+                            badgeClass: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+                          },
+                          {
+                            code: '{bg:blue}',
+                            label: 'Blue',
+                            badgeClass: 'bg-blue-100 text-blue-800 border-blue-300',
+                          },
+                          {
+                            code: '{bg:red}',
+                            label: 'Red',
+                            badgeClass: 'bg-rose-100 text-rose-800 border-rose-300',
+                          },
+                        ].map((item) => (
+                          <button
+                            key={item.code}
+                            type="button"
+                            onClick={() =>
+                              applyFormatToInput(
+                                contentInputRef.current,
+                                w.text,
+                                item.code,
+                                '',
+                                '',
+                                (text) => onUpdateWidget(w.id, { text })
+                              )
+                            }
+                            className={`rounded border px-1.5 py-0.5 font-medium ${item.badgeClass}`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="mb-1 block text-[10px] font-medium text-slate-500">
+                        Alignment &amp; Checkbox:
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          { code: '{r}', label: 'Right align {r}' },
+                          { code: '{c}', label: 'Center align {c}' },
+                          { code: '[x] ', label: 'Checked [x]' },
+                          { code: '[ ] ', label: 'Unchecked [ ]' },
+                        ].map((item) => (
+                          <button
+                            key={item.code}
+                            type="button"
+                            onClick={() =>
+                              applyFormatToInput(
+                                contentInputRef.current,
+                                w.text,
+                                item.code,
+                                '',
+                                '',
+                                (text) => onUpdateWidget(w.id, { text })
+                              )
+                            }
+                            className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-700 hover:bg-slate-100"
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Expandable Formatting Cheatsheet */}
+                {showMarkupGuide && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2.5 text-[11px] leading-relaxed text-slate-700 shadow-xs">
+                    <div className="mb-1 font-semibold text-blue-900">
+                      Formatting Markup Syntax
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 font-mono text-[10px]">
+                      <div>*bold* → <span className="font-bold">bold</span></div>
+                      <div>_italic_ → <span className="italic">italic</span></div>
+                      <div>+underline+ → <span className="underline">underline</span></div>
+                      <div>~strike~ → <span className="line-through">strike</span></div>
+                      <div>`code` → <span className="rounded bg-white px-0.5">code</span></div>
+                      <div>[Link|url] → <span className="text-blue-600 underline">Link</span></div>
+                    </div>
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      <code>{'{color:red}text{color}'}</code> or <code>{'{green}text{/green}'}</code>
+                    </div>
+                    {w.type === 'table' && (
+                      <div className="mt-1.5 border-t border-blue-200/70 pt-1 text-[10px] text-slate-600">
+                        <strong>Tables:</strong> Row 1 = headers. Commas = columns.<br />
+                        Directives: <code>{'{bg:green}'}</code>, <code>{'{r}'}</code>, <code>{'{c}'}</code>, <code>[x]</code>.
+                      </div>
+                    )}
+                    {w.type === 'paragraph' && (
+                      <div className="mt-1.5 border-t border-blue-200/70 pt-1 text-[10px] text-slate-600">
+                        <strong>Lists:</strong> Start lines with <code>* </code> or <code>- </code> for bullets, or <code>1. </code> for numbers.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {isMultilineContent ? (
               <textarea
-                rows={w.type === 'table' ? 5 : 4}
+                ref={(el) => {
+                  contentInputRef.current = el;
+                }}
+                rows={w.type === 'table' ? 6 : 4}
                 value={w.text}
                 onChange={(e) => onUpdateWidget(w.id, { text: e.target.value })}
                 className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-900 focus:border-blue-600 focus:bg-white focus:outline-none"
               />
             ) : (
               <input
+                ref={(el) => {
+                  contentInputRef.current = el;
+                }}
                 type="text"
                 value={w.text}
                 onChange={(e) => onUpdateWidget(w.id, { text: e.target.value })}
@@ -838,8 +1176,8 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
           </div>
         )}
 
-        {/* Heading / Box Alignment & Size */}
-        {(w.type === 'heading' || w.type === 'box') && (
+        {/* Heading / Paragraph / Box Alignment & Size */}
+        {(w.type === 'heading' || w.type === 'box' || w.type === 'paragraph') && (
           <div className="flex items-center justify-between gap-2">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-slate-600">
@@ -869,19 +1207,26 @@ export const InspectorPanel: React.FC<InspectorPanelProps> = ({
               </div>
             </div>
 
-            {w.type === 'heading' && (
+            {(w.type === 'heading' || w.type === 'paragraph') && (
               <div className="flex-1">
                 <label className="mb-1.5 block text-xs font-medium text-slate-600">
                   Scale
                 </label>
-                <div className="grid grid-cols-4 gap-1 rounded-lg bg-slate-100 p-0.5">
-                  {(['sm', 'md', 'lg', 'xl'] as const).map((sz) => (
+                <div
+                  className={`grid gap-1 rounded-lg bg-slate-100 p-0.5 ${
+                    w.type === 'heading' ? 'grid-cols-4' : 'grid-cols-3'
+                  }`}
+                >
+                  {(w.type === 'heading'
+                    ? (['sm', 'md', 'lg', 'xl'] as const)
+                    : (['sm', 'md', 'lg'] as const)
+                  ).map((sz) => (
                     <button
                       key={sz}
                       type="button"
                       onClick={() => onUpdateWidget(w.id, { fontSize: sz })}
                       className={`rounded-md py-1 text-xs font-medium uppercase transition-colors ${
-                        (w.fontSize || 'xl') === sz
+                        (w.fontSize || (w.type === 'heading' ? 'xl' : 'md')) === sz
                           ? 'bg-white text-slate-900 shadow-xs'
                           : 'text-slate-500 hover:text-slate-900'
                       }`}

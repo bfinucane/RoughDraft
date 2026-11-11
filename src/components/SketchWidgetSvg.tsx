@@ -7,6 +7,13 @@ import {
   sketchRectPaths,
   sketchScribbleLinesPath,
 } from '../utils/sketchPath';
+import {
+  FormattedSpan,
+  parseFormattedText,
+  parseTableCell,
+  truncateSpans,
+  wrapFormattedParagraph,
+} from '../utils/textMarkup';
 
 interface SketchWidgetSvgProps {
   widget: WireframeWidget;
@@ -147,6 +154,42 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
     );
   };
 
+  const renderTspan = (
+    span: FormattedSpan,
+    sIdx: number,
+    defaultColor: string,
+    isHeadBold = false
+  ) => {
+    const isBold = span.bold || isHeadBold;
+    const isItalic = Boolean(span.italic);
+    const isUnderline = Boolean(span.underline || span.link);
+    const isStrike = Boolean(span.strikethrough);
+    const textDecor =
+      isStrike && isUnderline
+        ? 'line-through underline'
+        : isStrike
+        ? 'line-through'
+        : isUnderline
+        ? 'underline'
+        : undefined;
+
+    const fontFam = span.code ? "'JetBrains Mono', monospace" : fontFamily;
+    const fillCol = span.color || (span.link ? '#2563eb' : defaultColor);
+
+    return (
+      <tspan
+        key={sIdx}
+        fontWeight={isBold ? 700 : 400}
+        fontStyle={isItalic ? 'italic' : 'normal'}
+        textDecoration={textDecor}
+        fill={fillCol}
+        fontFamily={fontFam}
+      >
+        {span.text}
+      </tspan>
+    );
+  };
+
   const renderWidgetBody = () => {
     switch (type) {
       case 'browser': {
@@ -267,6 +310,8 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
         const align = widget.align || 'center';
         const anchor = align === 'left' ? 'start' : align === 'right' ? 'end' : 'middle';
         const tx = align === 'left' ? x + 16 : align === 'right' ? x + w - 16 : x + w / 2;
+        const textSpans = text ? parseFormattedText(text) : [];
+        const subtextSpans = subtext ? parseFormattedText(subtext) : [];
         return (
           <g>
             {renderRectBase(x, y, w, h, 'box', fill, isBordered, 2)}
@@ -280,7 +325,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
                 fontWeight={600}
                 fill={textOnFill}
               >
-                {text}
+                {textSpans.map((sp, sIdx) => renderTspan(sp, sIdx, textOnFill, true))}
               </text>
             )}
             {subtext && (
@@ -292,7 +337,9 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
                 fontSize={13}
                 fill={fill === 'dark' ? '#cbd5e1' : INK_MUTED}
               >
-                {subtext}
+                {subtextSpans.map((sp, sIdx) =>
+                  renderTspan(sp, sIdx, fill === 'dark' ? '#cbd5e1' : INK_MUTED)
+                )}
               </text>
             )}
           </g>
@@ -735,6 +782,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
         const align = widget.align || 'left';
         const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
         const tx = align === 'center' ? x + w / 2 : align === 'right' ? x + w - 4 : x + 2;
+        const spans = parseFormattedText(text || '', { bold: true });
         return (
           <g>
             <text
@@ -746,7 +794,7 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
               fontWeight={700}
               fill={strokeColor}
             >
-              {text}
+              {spans.map((sp, sIdx) => renderTspan(sp, sIdx, strokeColor, true))}
             </text>
           </g>
         );
@@ -765,23 +813,52 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
           );
         }
         const fSize = widget.fontSize === 'sm' ? 12 : widget.fontSize === 'lg' ? 16 : 14;
-        const maxChars = Math.max(12, Math.floor(w / (fSize * 0.56)));
+        const align = widget.align || 'left';
+        const anchor = align === 'center' ? 'middle' : align === 'right' ? 'end' : 'start';
+        const maxChars = Math.max(10, Math.floor(w / (fSize * 0.56)));
         const maxLines = Math.max(1, Math.floor(h / (fSize * 1.45)));
-        const lines = wrapTextLines(text, maxChars, maxLines);
+        const formattedLines = wrapFormattedParagraph(text, maxChars, maxLines);
+
         return (
           <g>
-            {lines.map((ln, idx) => (
-              <text
-                key={idx}
-                x={x + 2}
-                y={y + fSize + 2 + idx * Math.round(fSize * 1.45)}
-                fontFamily={fontFamily}
-                fontSize={fSize}
-                fill={INK}
-              >
-                {ln}
-              </text>
-            ))}
+            {formattedLines.map((ln, idx) => {
+              const lineY = y + fSize + 2 + idx * Math.round(fSize * 1.45);
+              const tx =
+                align === 'center'
+                  ? x + w / 2
+                  : align === 'right'
+                  ? x + w - 4
+                  : ln.bullet
+                  ? x + 18
+                  : x + 2;
+
+              return (
+                <g key={idx}>
+                  {ln.bullet && align === 'left' && (
+                    <text
+                      x={x + 2}
+                      y={lineY}
+                      fontFamily={fontFamily}
+                      fontSize={fSize}
+                      fontWeight={700}
+                      fill={INK_MUTED}
+                    >
+                      {ln.bulletLabel}
+                    </text>
+                  )}
+                  <text
+                    x={tx}
+                    y={lineY}
+                    textAnchor={anchor}
+                    fontFamily={fontFamily}
+                    fontSize={fSize}
+                    fill={INK}
+                  >
+                    {ln.spans.map((sp, sIdx) => renderTspan(sp, sIdx, INK))}
+                  </text>
+                </g>
+              );
+            })}
           </g>
         );
       }
@@ -885,13 +962,16 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
         const rawRows = (text || 'Column A, Column B\nValue 1, Value 2')
           .split('\n')
           .filter((r) => r.trim().length > 0);
-        const parsed = rawRows.map((r) => r.split(',').map((c) => c.trim()));
-        const colCount = Math.max(1, ...parsed.map((r) => r.length));
+        const parsedRows = rawRows.map((r, rIdx) => {
+          const cells = r.split(',').map((c) => c.trim());
+          return cells.map((cellRaw) => parseTableCell(cellRaw, rIdx === 0));
+        });
+        const colCount = Math.max(1, ...parsedRows.map((r) => r.length));
         const colW = w / colCount;
         const headerH = 38;
         const bodyRowH = 36;
         const maxVisibleRows = Math.max(1, Math.floor((h - headerH) / bodyRowH) + 1);
-        const visibleRows = parsed.slice(0, maxVisibleRows);
+        const visibleRows = parsedRows.slice(0, maxVisibleRows);
 
         return (
           <g>
@@ -933,19 +1013,103 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
                     />
                   )}
                   {Array.from({ length: colCount }).map((_, cIdx) => {
-                    const cellText = cells[cIdx] || '';
+                    const cell = cells[cIdx] || parseTableCell('', isHead);
+                    const cellX = x + cIdx * colW;
+                    const cellY = rowTop;
+                    const hasChk = Boolean(cell.checkbox);
+                    const chkW = hasChk ? 22 : 0;
+                    const maxCellChars = Math.max(3, Math.floor((colW - 24 - chkW) / 7.2));
+                    const truncatedSpans = truncateSpans(cell.spans, maxCellChars);
+
+                    let anchor: 'start' | 'middle' | 'end' = 'start';
+                    let tx = cellX + 12 + chkW;
+                    if (cell.align === 'center') {
+                      anchor = 'middle';
+                      tx = cellX + colW / 2 + (hasChk ? 10 : 0);
+                    } else if (cell.align === 'right') {
+                      anchor = 'end';
+                      tx = cellX + colW - 12;
+                    }
+
                     return (
-                      <text
-                        key={cIdx}
-                        x={x + cIdx * colW + 12}
-                        y={rowTop + curH / 2 + 5}
-                        fontFamily={fontFamily}
-                        fontSize={13}
-                        fontWeight={isHead ? 700 : 400}
-                        fill={isHead ? INK : '#334155'}
-                      >
-                        {cellText.slice(0, Math.max(4, Math.floor((colW - 20) / 7.5)))}
-                      </text>
+                      <g key={cIdx}>
+                        {/* Cell background highlight directive e.g. {bg:green} */}
+                        {cell.bg && (
+                          <rect
+                            x={cellX + 1}
+                            y={cellY + 1}
+                            width={colW - 2}
+                            height={curH - 2}
+                            fill={cell.bg}
+                            rx={2}
+                          />
+                        )}
+                        {/* Optional Cell Checkbox / Radio mark e.g. [x], [ ], (o), ( ) */}
+                        {cell.checkbox && (
+                          <g>
+                            {cell.checkbox.startsWith('radio') ? (
+                              <>
+                                <circle
+                                  cx={cellX + 18}
+                                  cy={rowTop + curH / 2}
+                                  r={6.5}
+                                  fill="#ffffff"
+                                  stroke={strokeColor}
+                                  strokeWidth={1.5}
+                                />
+                                {cell.checkbox === 'radio-checked' && (
+                                  <circle
+                                    cx={cellX + 18}
+                                    cy={rowTop + curH / 2}
+                                    r={3.2}
+                                    fill={strokeColor}
+                                  />
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <rect
+                                  x={cellX + 12}
+                                  y={rowTop + curH / 2 - 6.5}
+                                  width={13}
+                                  height={13}
+                                  rx={2}
+                                  fill="#ffffff"
+                                  stroke={strokeColor}
+                                  strokeWidth={1.5}
+                                />
+                                {cell.checkbox === 'checked' && (
+                                  <path
+                                    d={`M ${cellX + 14.5} ${rowTop + curH / 2} L ${
+                                      cellX + 17.5
+                                    } ${rowTop + curH / 2 + 3.5} L ${cellX + 22.5} ${
+                                      rowTop + curH / 2 - 3.5
+                                    }`}
+                                    stroke={strokeColor}
+                                    strokeWidth={1.8}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    fill="none"
+                                  />
+                                )}
+                              </>
+                            )}
+                          </g>
+                        )}
+                        <text
+                          x={tx}
+                          y={rowTop + curH / 2 + 5}
+                          textAnchor={anchor}
+                          fontFamily={fontFamily}
+                          fontSize={13}
+                          fontWeight={isHead ? 700 : 400}
+                          fill={isHead ? INK : '#334155'}
+                        >
+                          {truncatedSpans.map((sp, sIdx) =>
+                            renderTspan(sp, sIdx, isHead ? INK : '#334155', isHead)
+                          )}
+                        </text>
+                      </g>
                     );
                   })}
                 </g>
@@ -1032,11 +1196,10 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
 
       case 'note': {
         const fold = 18;
-        const lines = wrapTextLines(
-          text,
-          Math.max(12, Math.floor((w - 24) / 7.5)),
-          Math.max(2, Math.floor((h - 24) / 18))
-        );
+        const fSize = 13;
+        const maxChars = Math.max(12, Math.floor((w - 24) / 7.5));
+        const maxLines = Math.max(2, Math.floor((h - 24) / 18));
+        const formattedLines = wrapFormattedParagraph(text, maxChars, maxLines);
         const poly = `M ${x} ${y} L ${x + w - fold} ${y} L ${x + w} ${y + fold} L ${x + w} ${
           y + h
         } L ${x} ${y + h} Z`;
@@ -1063,18 +1226,35 @@ export const SketchWidgetSvg: React.FC<SketchWidgetSvgProps> = ({
               strokeWidth={1.5}
               strokeLinejoin="round"
             />
-            {lines.map((ln, idx) => (
-              <text
-                key={idx}
-                x={x + 12}
-                y={y + 26 + idx * 18}
-                fontFamily={fontFamily}
-                fontSize={13}
-                fill="#713f12"
-              >
-                {ln}
-              </text>
-            ))}
+            {formattedLines.map((ln, idx) => {
+              const lineY = y + 26 + idx * 18;
+              const tx = ln.bullet ? x + 24 : x + 12;
+              return (
+                <g key={idx}>
+                  {ln.bullet && (
+                    <text
+                      x={x + 10}
+                      y={lineY}
+                      fontFamily={fontFamily}
+                      fontSize={fSize}
+                      fontWeight={700}
+                      fill="#854d0e"
+                    >
+                      {ln.bulletLabel}
+                    </text>
+                  )}
+                  <text
+                    x={tx}
+                    y={lineY}
+                    fontFamily={fontFamily}
+                    fontSize={fSize}
+                    fill="#713f12"
+                  >
+                    {ln.spans.map((sp, sIdx) => renderTspan(sp, sIdx, '#713f12'))}
+                  </text>
+                </g>
+              );
+            })}
           </g>
         );
       }

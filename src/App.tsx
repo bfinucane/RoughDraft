@@ -1,10 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Bold,
   ChevronLeft,
   ChevronRight,
+  Code,
   Copy,
   Grid,
   Group,
+  Italic,
+  Link2,
   Minus,
   MousePointer2,
   Play,
@@ -12,11 +16,14 @@ import {
   Redo2,
   Search,
   StickyNote,
+  Strikethrough,
   Trash2,
+  Underline,
   Undo2,
   Ungroup,
   X,
 } from 'lucide-react';
+import { applyFormatToInput } from './utils/textMarkup';
 import { InspectorPanel } from './components/InspectorPanel';
 import { ExportModal, ShortcutsModal, TemplatesModal } from './components/Modals';
 import { QuickAddPalette } from './components/QuickAddPalette';
@@ -2252,9 +2259,203 @@ export default function App() {
                       (editingWidget.type === 'modal' && editingField === 'subtext'
                         ? editingWidget.y + 52
                         : editingWidget.y) * zoom,
-                    width: Math.max(180, editingWidget.w * zoom),
+                    width: Math.max(220, editingWidget.w * zoom),
                   }}
                 >
+                  {(editingWidget.type === 'table' ||
+                    editingWidget.type === 'paragraph' ||
+                    editingWidget.type === 'heading' ||
+                    editingWidget.type === 'note' ||
+                    editingWidget.type === 'box') && (
+                    <div
+                      className="mb-1 flex flex-wrap items-center gap-0.5 rounded-lg border border-slate-300 bg-white/95 px-1.5 py-1 shadow-md backdrop-blur-xs"
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
+                      <button
+                        type="button"
+                        title="Bold: *text* (Ctrl+B)"
+                        onClick={() =>
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '*',
+                            '*',
+                            'bold',
+                            setEditingDraft
+                          )
+                        }
+                        className="rounded p-1 text-slate-700 hover:bg-slate-100"
+                      >
+                        <Bold className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Italic: _text_ (Ctrl+I)"
+                        onClick={() =>
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '_',
+                            '_',
+                            'italic',
+                            setEditingDraft
+                          )
+                        }
+                        className="rounded p-1 text-slate-700 hover:bg-slate-100"
+                      >
+                        <Italic className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Underline: +text+ (Ctrl+U)"
+                        onClick={() =>
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '+',
+                            '+',
+                            'underline',
+                            setEditingDraft
+                          )
+                        }
+                        className="rounded p-1 text-slate-700 hover:bg-slate-100"
+                      >
+                        <Underline className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Strikethrough: ~text~"
+                        onClick={() =>
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '~',
+                            '~',
+                            'strike',
+                            setEditingDraft
+                          )
+                        }
+                        className="rounded p-1 text-slate-700 hover:bg-slate-100"
+                      >
+                        <Strikethrough className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Code: `code`"
+                        onClick={() =>
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '`',
+                            '`',
+                            'code',
+                            setEditingDraft
+                          )
+                        }
+                        className="rounded p-1 text-slate-700 hover:bg-slate-100"
+                      >
+                        <Code className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Link: [link text]"
+                        onClick={() =>
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '[',
+                            ']',
+                            'link text',
+                            setEditingDraft
+                          )
+                        }
+                        className="rounded p-1 text-slate-700 hover:bg-slate-100"
+                      >
+                        <Link2 className="h-3 w-3" />
+                      </button>
+
+                      {editingWidget.type === 'table' && (
+                        <>
+                          <div className="mx-0.5 h-3.5 w-px bg-slate-200" />
+                          <button
+                            type="button"
+                            title="Cell green fill {bg:green}"
+                            onClick={() =>
+                              applyFormatToInput(
+                                inlineInputRef.current,
+                                editingDraft,
+                                '{bg:green}',
+                                '',
+                                '',
+                                setEditingDraft
+                              )
+                            }
+                            className="rounded bg-emerald-50 px-1 py-0.5 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                          >
+                            +Green
+                          </button>
+                          <button
+                            type="button"
+                            title="Cell yellow fill {bg:yellow}"
+                            onClick={() =>
+                              applyFormatToInput(
+                                inlineInputRef.current,
+                                editingDraft,
+                                '{bg:yellow}',
+                                '',
+                                '',
+                                setEditingDraft
+                              )
+                            }
+                            className="rounded bg-yellow-50 px-1 py-0.5 text-[10px] font-semibold text-yellow-700 hover:bg-yellow-100"
+                          >
+                            +Yellow
+                          </button>
+                          <button
+                            type="button"
+                            title="Cell right-align {r}"
+                            onClick={() =>
+                              applyFormatToInput(
+                                inlineInputRef.current,
+                                editingDraft,
+                                '{r}',
+                                '',
+                                '',
+                                setEditingDraft
+                              )
+                            }
+                            className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-200"
+                          >
+                            {'{r}'}
+                          </button>
+                          <button
+                            type="button"
+                            title="Checkbox [x]"
+                            onClick={() =>
+                              applyFormatToInput(
+                                inlineInputRef.current,
+                                editingDraft,
+                                '[x] ',
+                                '',
+                                '',
+                                setEditingDraft
+                              )
+                            }
+                            className="rounded bg-slate-100 px-1 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-200"
+                          >
+                            [x]
+                          </button>
+                        </>
+                      )}
+
+                      <span className="ml-auto text-[10px] text-slate-400">
+                        {editingWidget.type === 'table' || editingWidget.type === 'paragraph'
+                          ? 'Ctrl+Enter saves'
+                          : 'Enter saves'}
+                      </span>
+                    </div>
+                  )}
+
                   {editingWidget.type === 'table' ||
                   editingWidget.type === 'checkbox' ||
                   editingWidget.type === 'paragraph' ||
@@ -2269,7 +2470,38 @@ export default function App() {
                       onChange={(e) => setEditingDraft(e.target.value)}
                       onBlur={commitInlineEdit}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        const mod = e.metaKey || e.ctrlKey;
+                        if (mod && e.key.toLowerCase() === 'b') {
+                          e.preventDefault();
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '*',
+                            '*',
+                            'bold',
+                            setEditingDraft
+                          );
+                        } else if (mod && e.key.toLowerCase() === 'i') {
+                          e.preventDefault();
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '_',
+                            '_',
+                            'italic',
+                            setEditingDraft
+                          );
+                        } else if (mod && e.key.toLowerCase() === 'u') {
+                          e.preventDefault();
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '+',
+                            '+',
+                            'underline',
+                            setEditingDraft
+                          );
+                        } else if (e.key === 'Enter' && mod) {
                           e.preventDefault();
                           commitInlineEdit();
                         } else if (e.key === 'Escape') {
@@ -2289,7 +2521,38 @@ export default function App() {
                       onChange={(e) => setEditingDraft(e.target.value)}
                       onBlur={commitInlineEdit}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        const mod = e.metaKey || e.ctrlKey;
+                        if (mod && e.key.toLowerCase() === 'b') {
+                          e.preventDefault();
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '*',
+                            '*',
+                            'bold',
+                            setEditingDraft
+                          );
+                        } else if (mod && e.key.toLowerCase() === 'i') {
+                          e.preventDefault();
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '_',
+                            '_',
+                            'italic',
+                            setEditingDraft
+                          );
+                        } else if (mod && e.key.toLowerCase() === 'u') {
+                          e.preventDefault();
+                          applyFormatToInput(
+                            inlineInputRef.current,
+                            editingDraft,
+                            '+',
+                            '+',
+                            'underline',
+                            setEditingDraft
+                          );
+                        } else if (e.key === 'Enter') {
                           e.preventDefault();
                           commitInlineEdit();
                         } else if (e.key === 'Escape') {

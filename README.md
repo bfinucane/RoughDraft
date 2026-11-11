@@ -30,18 +30,34 @@
 
 Double-click any widget on the canvas (or edit its fields in the right-hand Inspector) using simple text patterns:
 
+- **Text & Paragraph Formatting**:
+  - `*bold text*` or `**bold**` → **bold**
+  - `_italic text_` or `//italic//` → *italic*
+  - `+underline+` → <u>underline</u>
+  - `~strikethrough~` → ~~strikethrough~~
+  - `` `code snippet` `` → `monospace code badge`
+  - `[Link Text|https://...]` or `[Link Text]` → clickable link style (blue with underline)
+  - `{color:red}Alert text{color}` or `{green}Success{/green}` → custom text color (red, green, blue, amber, purple, muted, or hex code)
+  - Bullet lists (`* ` or `- `) and numbered lists (`1. `) are automatically formatted with proper indents and bullet glyphs.
+
+- **Data Tables** (first line = headers, commas = columns):
+  ```text
+  Project, Owner, Updated, {c}Status
+  [x] Onboarding Flow, Claire, 2h ago, {bg:yellow}*Review*
+  [x] Checkout v2, Marcus, Yesterday, {bg:green}{color:green}*Active*{color}
+  [ ] Billing Portal, Priya, Oct 29, ~Archived~
+  ```
+  - **Cell Background Fill**: `{bg:green}`, `{bg:yellow}`, `{bg:blue}`, `{bg:red}`, or `{bg:#hex}`
+  - **Cell Alignment**: `{r}` / `{right}` (right align), `{c}` / `{center}` (center align)
+  - **Checkboxes & Radios in Cells**: `[x]`, `[ ]`, `(o)`, `( )`
+  - **Inline Cell Formatting**: Combine `*bold*`, `_italic_`, `[links]`, and colors inside any cell.
+
 - **Checklist & Radio Groups**:
   ```text
   [x] Checked option
   [ ] Unchecked option
   (o) Selected radio button
   ( ) Unselected radio button
-  ```
-- **Data Tables** (first line = headers, commas = columns):
-  ```text
-  Project, Owner, Updated, Status
-  Onboarding Flow, Claire, 2h ago, Review
-  Checkout v2, Marcus, Yesterday, Active
   ```
 - **Tabs & Top Navbars**: Separate items with commas (e.g., `Overview, Activity, Members, Billing`) and pick the active tab index in the Inspector.
 - **Scrollbars**: Double-click a Vertical or Horizontal Scrollbar on the canvas to cycle the thumb position (`0% → 50% → 100%`), or fine-tune it with the Inspector slider.

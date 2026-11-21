@@ -3,6 +3,8 @@ import {
   Bold,
   ChevronLeft,
   ChevronRight,
+  ClipboardCopy,
+  ClipboardPaste,
   Code,
   Copy,
   Grid,
@@ -21,11 +23,31 @@ import {
   Underline,
   Undo2,
   Ungroup,
+  Wand2,
   X,
 } from 'lucide-react';
+import {
+  instantiatePastedScreen,
+  instantiatePastedWidgets,
+  parseRoughDraftClipboard,
+  serializeScreenForClipboard,
+  serializeWidgetsForClipboard,
+  writeTextToClipboard,
+} from './utils/clipboard';
 import { applyFormatToInput } from './utils/textMarkup';
+import {
+  AiWireframeModal,
+  type AiGeneratedWireframePayload,
+  type AiGenerationMode,
+} from './components/AiWireframeModal';
+import { ContextMenu } from './components/ContextMenu';
 import { InspectorPanel } from './components/InspectorPanel';
-import { ExportModal, ShortcutsModal, TemplatesModal } from './components/Modals';
+import {
+  ExportModal,
+  PasteClipboardModal,
+  ShortcutsModal,
+  TemplatesModal,
+} from './components/Modals';
 import { QuickAddPalette } from './components/QuickAddPalette';
 import { SketchWidgetSvg } from './components/SketchWidgetSvg';
 import { StencilIcon } from './components/StencilIcon';
@@ -173,12 +195,19 @@ export default function App() {
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [aiModalState, setAiModalState] = useState<{
+    open: boolean;
+    mode: AiGenerationMode;
+  }>({ open: false, mode: 'text' });
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const mainViewportRef = useRef<HTMLElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const interactionRef = useRef<DragInteraction | null>(null);
   const inlineInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
+  const internalClipboardRef = useRef<string>('');
 
   // Ensure activeScreenId always resolves to an existing screen
   const activeScreen = useMemo<ScreenFrame>(() => {
@@ -635,6 +664,87 @@ export default function App() {
     [activeScreen.id, commitProject]
   );
 
+  // Layer ordering for all currently selected widgets (or group)
+  const handleLayerSelected = useCallback(
+    (action: 'front' | 'back' | 'forward' | 'backward') => {
+      if (selectedIds.length === 0) return;
+      const selectedSet = new Set(selectedIds);
+
+      commitProject((prev) => ({
+        ...prev,
+        screens: prev.screens.map((s) => {
+          if (s.id !== activeScreen.id) return s;
+          const list = [...s.widgets];
+
+          if (action === 'front') {
+            const unselected = list.filter((w) => !selectedSet.has(w.id));
+            const selected = list.filter((w) => selectedSet.has(w.id));
+            return { ...s, widgets: [...unselected, ...selected] };
+          }
+
+          if (action === 'back') {
+            const unselected = list.filter((w) => !selectedSet.has(w.id));
+            const selected = list.filter((w) => selectedSet.has(w.id));
+            return { ...s, widgets: [...selected, ...unselected] };
+          }
+
+          if (action === 'forward') {
+            for (let i = list.length - 2; i >= 0; i--) {
+              if (selectedSet.has(list[i].id) && !selectedSet.has(list[i + 1].id)) {
+                const temp = list[i];
+                list[i] = list[i + 1];
+                list[i + 1] = temp;
+              }
+            }
+            return { ...s, widgets: list };
+          }
+
+          if (action === 'backward') {
+            for (let i = 1; i < list.length; i++) {
+              if (selectedSet.has(list[i].id) && !selectedSet.has(list[i - 1].id)) {
+                const temp = list[i];
+                list[i] = list[i - 1];
+                list[i - 1] = temp;
+              }
+            }
+            return { ...s, widgets: list };
+          }
+
+          return s;
+        }),
+      }));
+    },
+    [activeScreen.id, commitProject, selectedIds]
+  );
+
+  // Toggle lock on all selected widgets
+  const handleToggleLockSelected = useCallback(() => {
+    if (selectedWidgets.length === 0) return;
+    const anyUnlocked = selectedWidgets.some((w) => !w.locked);
+    const nextLocked = anyUnlocked;
+    const selectedSet = new Set(selectedIds);
+
+    commitProject((prev) => ({
+      ...prev,
+      screens: prev.screens.map((s) =>
+        s.id === activeScreen.id
+          ? {
+              ...s,
+              widgets: s.widgets.map((w) =>
+                selectedSet.has(w.id) ? { ...w, locked: nextLocked } : w
+              ),
+            }
+          : s
+      ),
+    }));
+    showToast(nextLocked ? 'Locked selected' : 'Unlocked selected');
+  }, [activeScreen.id, commitProject, selectedIds, selectedWidgets, showToast]);
+
+  // Select all widgets on current artboard
+  const handleSelectAll = useCallback(() => {
+    setSelectedIds(visibleWidgets.map((w) => w.id));
+  }, [visibleWidgets]);
+
   // Multi-select alignment (treats bound sub-groups as single units if multiple groups are aligned, or individual items if ungrouped)
   const handleAlignSelected = useCallback(
     (mode: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom') => {
@@ -759,60 +869,158 @@ export default function App() {
     setSelectedIds([]);
   };
 
+  // Cross-instance Copy & Paste for Screens and Widgets
+  const handleCopyScreenToClipboard = useCallback(
+    async (screen: ScreenFrame) => {
+      const serialized = serializeScreenForClipboard(screen);
+      internalClipboardRef.current = serialized;
+      const ok = await writeTextToClipboard(serialized);
+      if (ok) {
+        showToast(`Copied screen "${screen.name}" — paste in any RoughDraft tab`);
+      } else {
+        showToast(`Copied screen "${screen.name}" locally`);
+      }
+    },
+    [showToast]
+  );
+
+  const handleCopyWidgetsToClipboard = useCallback(async () => {
+    if (selectedWidgets.length === 0) return;
+    const serialized = serializeWidgetsForClipboard(selectedWidgets, activeScreen.id);
+    internalClipboardRef.current = serialized;
+    const ok = await writeTextToClipboard(serialized);
+    if (ok) {
+      showToast(
+        `Copied ${selectedWidgets.length} ${selectedWidgets.length === 1 ? 'widget' : 'widgets'}`
+      );
+    } else {
+      showToast(`Copied ${selectedWidgets.length} widget(s) locally`);
+    }
+  }, [activeScreen.id, selectedWidgets, showToast]);
+
+  const applyClipboardText = useCallback(
+    (rawText: string): boolean => {
+      const parsed = parseRoughDraftClipboard(rawText);
+      if (!parsed) return false;
+
+      if (parsed.kind === 'screen') {
+        const nextScreen = instantiatePastedScreen(
+          parsed.screen,
+          project.screens,
+          makeId
+        );
+        commitProject((prev) => ({
+          ...prev,
+          screens: [...prev.screens, nextScreen],
+        }));
+        setActiveScreenId(nextScreen.id);
+        setSelectedIds([]);
+        setEditingWidgetId(null);
+        showToast(
+          `Pasted screen "${nextScreen.name}" (${nextScreen.widgets.length} widgets)`
+        );
+        return true;
+      }
+
+      const sameScreen = parsed.sourceScreenId === activeScreen.id;
+      const nextWidgets = instantiatePastedWidgets(
+        parsed.widgets,
+        activeScreen,
+        project.screens,
+        sameScreen,
+        makeId
+      );
+      if (nextWidgets.length === 0) return false;
+
+      commitProject((prev) => ({
+        ...prev,
+        screens: prev.screens.map((s) =>
+          s.id === activeScreen.id
+            ? { ...s, widgets: [...s.widgets, ...nextWidgets] }
+            : s
+        ),
+      }));
+      setSelectedIds(nextWidgets.map((w) => w.id));
+      setEditingWidgetId(null);
+      showToast(
+        `Pasted ${nextWidgets.length} ${nextWidgets.length === 1 ? 'widget' : 'widgets'}`
+      );
+      return true;
+    },
+    [activeScreen, commitProject, project.screens, showToast]
+  );
+
+  const handlePasteFromButton = useCallback(async () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+      try {
+        const clipText = await navigator.clipboard.readText();
+        if (clipText && applyClipboardText(clipText)) {
+          return;
+        }
+      } catch {
+        // Clipboard read permission denied or unavailable; open paste dialog
+      }
+    }
+    if (internalClipboardRef.current && applyClipboardText(internalClipboardRef.current)) {
+      return;
+    }
+    setIsPasteModalOpen(true);
+  }, [applyClipboardText]);
+
   // Inline Double-Click Editing (zone-aware for header vs body/placeholder/links)
-  const startInlineEdit = (
-    widget: WireframeWidget,
-    clickPoint?: { x: number; y: number }
-  ) => {
-    if (widget.type === 'vscrollbar' || widget.type === 'hscrollbar') {
-      const cur = widget.scrollPos ?? 20;
-      const next = cur < 40 ? 50 : cur < 90 ? 100 : 0;
-      updateWidget(widget.id, { scrollPos: next });
-      return;
-    }
-    if (widget.type === 'divider' || widget.type === 'mobile' || widget.type === 'arrow') {
-      return;
-    }
+  const startInlineEdit = useCallback(
+    (widget: WireframeWidget, clickPoint?: { x: number; y: number }) => {
+      if (widget.type === 'vscrollbar' || widget.type === 'hscrollbar') {
+        const cur = widget.scrollPos ?? 20;
+        const next = cur < 40 ? 50 : cur < 90 ? 100 : 0;
+        updateWidget(widget.id, { scrollPos: next });
+        return;
+      }
+      if (widget.type === 'divider' || widget.type === 'mobile' || widget.type === 'arrow') {
+        return;
+      }
 
-    let field: 'text' | 'subtext' = 'text';
-    if (widget.type === 'browser') {
-      field = 'subtext';
-    } else if (widget.type === 'modal' && clickPoint && clickPoint.y > widget.y + 44) {
-      field = 'subtext';
-    } else if (
-      widget.type === 'input' &&
-      clickPoint &&
-      widget.h >= 52 &&
-      clickPoint.y > widget.y + 22
-    ) {
-      field = 'subtext';
-    } else if (widget.type === 'navbar' && clickPoint && clickPoint.x > widget.x + 180) {
-      field = 'subtext';
-    } else if (
-      widget.type === 'box' &&
-      widget.subtext &&
-      clickPoint &&
-      clickPoint.y > widget.y + widget.h / 2
-    ) {
-      field = 'subtext';
-    }
+      let field: 'text' | 'subtext' = 'text';
+      if (widget.type === 'browser') {
+        field = 'subtext';
+      } else if (widget.type === 'modal' && clickPoint && clickPoint.y > widget.y + 44) {
+        field = 'subtext';
+      } else if (
+        widget.type === 'input' &&
+        clickPoint &&
+        widget.h >= 52 &&
+        clickPoint.y > widget.y + 22
+      ) {
+        field = 'subtext';
+      } else if (widget.type === 'navbar' && clickPoint && clickPoint.x > widget.x + 180) {
+        field = 'subtext';
+      } else if (
+        widget.type === 'box' &&
+        widget.subtext &&
+        clickPoint &&
+        clickPoint.y > widget.y + widget.h / 2
+      ) {
+        field = 'subtext';
+      }
 
-    setEditingWidgetId(widget.id);
-    setEditingField(field);
-    setEditingDraft(
-      field === 'subtext'
-        ? widget.subtext !== undefined
-          ? widget.subtext
-          : widget.type === 'browser'
-          ? widget.text
-          : ''
-        : widget.text
-    );
-    requestAnimationFrame(() => {
-      inlineInputRef.current?.focus();
-      inlineInputRef.current?.select();
-    });
-  };
+      setEditingWidgetId(widget.id);
+      setEditingField(field);
+      setEditingDraft(
+        field === 'subtext'
+          ? widget.subtext !== undefined
+            ? widget.subtext
+            : widget.type === 'browser'
+            ? widget.text
+            : ''
+          : widget.text
+      );
+      requestAnimationFrame(() => {
+        inlineInputRef.current?.focus();
+        inlineInputRef.current?.select();
+      });
+    },
+    [updateWidget]
+  );
 
   const commitInlineEdit = useCallback(() => {
     if (!editingWidgetId) return;
@@ -826,6 +1034,16 @@ export default function App() {
     }
     setEditingWidgetId(null);
   }, [activeScreen.widgets, editingDraft, editingField, editingWidgetId, updateWidget]);
+
+  // Start inline editing for currently selected widget from context menu
+  const handleStartEditSelected = useCallback(() => {
+    if (selectedWidgets.length !== 1) return;
+    const target = selectedWidgets[0];
+    startInlineEdit(target, {
+      x: target.x + target.w / 2,
+      y: target.y + target.h / 2,
+    });
+  }, [selectedWidgets, startInlineEdit]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -842,6 +1060,10 @@ export default function App() {
       }
 
       if (e.key === 'Escape') {
+        if (contextMenu) {
+          setContextMenu(null);
+          return;
+        }
         if (editingWidgetId) {
           setEditingWidgetId(null);
           return;
@@ -853,9 +1075,38 @@ export default function App() {
         setSelectedIds([]);
       }
 
-      if (isTyping || isPresentMode || isQuickAddOpen) return;
+      if (
+        isTyping ||
+        isPresentMode ||
+        isQuickAddOpen ||
+        isTemplatesOpen ||
+        isExportOpen ||
+        isShortcutsOpen ||
+        isPasteModalOpen ||
+        aiModalState.open
+      ) {
+        return;
+      }
 
       const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key.toLowerCase() === 'c') {
+        const selectionText = window.getSelection()?.toString();
+        if (selectionText) return;
+        e.preventDefault();
+        if (selectedWidgets.length > 0) {
+          void handleCopyWidgetsToClipboard();
+        } else {
+          void handleCopyScreenToClipboard(activeScreen);
+        }
+        return;
+      }
+
+      if (mod && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        handleSelectAll();
+        return;
+      }
 
       if (e.key === '/') {
         e.preventDefault();
@@ -900,15 +1151,15 @@ export default function App() {
         return;
       }
 
-      if (e.key === ']' && selectedIds.length === 1) {
+      if (e.key === ']' && selectedIds.length > 0) {
         e.preventDefault();
-        handleLayerAction(selectedIds[0], 'forward');
+        handleLayerSelected(mod ? 'front' : 'forward');
         return;
       }
 
-      if (e.key === '[' && selectedIds.length === 1) {
+      if (e.key === '[' && selectedIds.length > 0) {
         e.preventDefault();
-        handleLayerAction(selectedIds[0], 'backward');
+        handleLayerSelected(mod ? 'back' : 'backward');
         return;
       }
 
@@ -943,26 +1194,67 @@ export default function App() {
       if (e.code === 'Space') setIsSpaceHeld(false);
     };
 
+    const onPaste = (e: ClipboardEvent) => {
+      const activeTag = document.activeElement?.tagName.toLowerCase();
+      const isTyping =
+        activeTag === 'input' ||
+        activeTag === 'textarea' ||
+        activeTag === 'select' ||
+        Boolean(editingWidgetId);
+      if (
+        isTyping ||
+        isPresentMode ||
+        isQuickAddOpen ||
+        isTemplatesOpen ||
+        isExportOpen ||
+        isShortcutsOpen ||
+        isPasteModalOpen ||
+        aiModalState.open
+      ) {
+        return;
+      }
+
+      const text = e.clipboardData?.getData('text/plain');
+      if (text && applyClipboardText(text)) {
+        e.preventDefault();
+      } else if (!text && internalClipboardRef.current && applyClipboardText(internalClipboardRef.current)) {
+        e.preventDefault();
+      }
+    };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('paste', onPaste);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('paste', onPaste);
     };
   }, [
-    activeScreen.id,
+    activeScreen,
+    applyClipboardText,
     commitProject,
+    contextMenu,
     deleteSelected,
     duplicateSelected,
     editingWidgetId,
+    handleCopyScreenToClipboard,
+    handleCopyWidgetsToClipboard,
     handleGroupSelected,
-    handleLayerAction,
+    handleLayerSelected,
     handleRedo,
+    handleSelectAll,
     handleUndo,
     handleUngroupSelected,
+    aiModalState.open,
+    isExportOpen,
+    isPasteModalOpen,
     isPresentMode,
     isQuickAddOpen,
+    isShortcutsOpen,
+    isTemplatesOpen,
     selectedIds,
+    selectedWidgets.length,
   ]);
 
   // Pointer drag, proportional resize, marquee, and pan handlers
@@ -1340,6 +1632,16 @@ export default function App() {
             type="button"
             onClick={() => {
               setIsPresentMode(false);
+              setAiModalState({ open: true, mode: 'text' });
+            }}
+            className="transition-colors hover:text-slate-900 hover:underline underline-offset-4 whitespace-nowrap shrink-0"
+          >
+            AI Sketch
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsPresentMode(false);
               setIsTemplatesOpen(true);
             }}
             className="transition-colors hover:text-slate-900 hover:underline underline-offset-4 whitespace-nowrap shrink-0"
@@ -1471,20 +1773,31 @@ export default function App() {
             )}
           </div>
 
-          {/* Center: Balsamiq-inspired Quick Add Trigger */}
-          <button
-            type="button"
-            onClick={() => setIsQuickAddOpen(true)}
-            className="hidden max-w-xs flex-1 items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700 md:flex"
-          >
-            <span className="flex items-center gap-2 truncate">
-              <Plus className="h-3.5 w-3.5 text-slate-400" />
-              <span>Quick add widget...</span>
-            </span>
-            <kbd className="font-mono-tabular rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-              /
-            </kbd>
-          </button>
+          {/* Center: Balsamiq-inspired Quick Add & AI Wireframe Triggers */}
+          <div className="hidden max-w-md flex-1 items-center gap-2 md:flex">
+            <button
+              type="button"
+              onClick={() => setIsQuickAddOpen(true)}
+              className="flex flex-1 items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
+            >
+              <span className="flex items-center gap-2 truncate">
+                <Plus className="h-3.5 w-3.5 text-slate-400" />
+                <span>Quick add widget...</span>
+              </span>
+              <kbd className="font-mono-tabular rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                /
+              </kbd>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAiModalState({ open: true, mode: 'text' })}
+              title="Generate wireframe from text or screenshot"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50/70 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:border-blue-300 hover:bg-blue-100/70 whitespace-nowrap shrink-0"
+            >
+              <Wand2 className="h-3.5 w-3.5" />
+              <span>AI Generate</span>
+            </button>
+          </div>
 
           {/* Right: Sketch Style, Snap, Notes, Zoom */}
           <div className="flex items-center gap-2">
@@ -1594,18 +1907,29 @@ export default function App() {
           <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
             {/* Screens Section */}
             <div className="border-b border-slate-200 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="truncate text-xs font-semibold text-slate-700">
                   Screens ({project.screens.length})
                 </span>
-                <button
-                  type="button"
-                  onClick={handleAddScreen}
-                  className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 whitespace-nowrap"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>New</span>
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void handlePasteFromButton()}
+                    title="Paste copied screen or widgets (Ctrl/Cmd+V)"
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 whitespace-nowrap"
+                  >
+                    <ClipboardPaste className="h-3.5 w-3.5" />
+                    <span>Paste</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddScreen}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 whitespace-nowrap"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>New</span>
+                  </button>
+                </div>
               </div>
 
               <div className="max-h-40 space-y-1 overflow-y-auto pr-0.5">
@@ -1643,7 +1967,22 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          type="button"
+                          title="Copy Screen to Clipboard (for another RoughDraft window)"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleCopyScreenToClipboard(scr);
+                          }}
+                          className={`rounded p-1 ${
+                            isActive
+                              ? 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                              : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+                          }`}
+                        >
+                          <ClipboardCopy className="h-3 w-3" />
+                        </button>
                         <button
                           type="button"
                           title="Duplicate Screen"
@@ -1750,7 +2089,13 @@ export default function App() {
               ? 'overflow-auto bg-slate-900'
               : 'studio-canvas-scroll canvas-dot-backdrop'
           } ${isSpaceHeld ? 'cursor-grab' : ''}`}
+          onContextMenu={(e) => {
+            if (isPresentMode) return;
+            e.preventDefault();
+            setContextMenu({ x: e.clientX, y: e.clientY });
+          }}
           onMouseDown={(e) => {
+            if (contextMenu) setContextMenu(null);
             if (isSpaceHeld || e.button === 1) {
               e.preventDefault();
               const vp = mainViewportRef.current;
@@ -1770,7 +2115,7 @@ export default function App() {
               };
               return;
             }
-            if (e.target === e.currentTarget && !isPresentMode) {
+            if (e.target === e.currentTarget && !isPresentMode && e.button === 0) {
               setSelectedIds([]);
               commitInlineEdit();
             }
@@ -1831,8 +2176,17 @@ export default function App() {
                 ? '100%'
                 : Math.round(activeScreen.height * zoom + 280),
             }}
+            onContextMenu={(e) => {
+              if (isPresentMode) return;
+              e.preventDefault();
+              if (e.target === e.currentTarget) {
+                setSelectedIds([]);
+              }
+              setContextMenu({ x: e.clientX, y: e.clientY });
+            }}
             onMouseDown={(e) => {
-              if (e.target === e.currentTarget && !isPresentMode && !isSpaceHeld) {
+              if (contextMenu) setContextMenu(null);
+              if (e.target === e.currentTarget && !isPresentMode && !isSpaceHeld && e.button === 0) {
                 setSelectedIds([]);
                 commitInlineEdit();
               }
@@ -1882,7 +2236,20 @@ export default function App() {
                 height={activeScreen.height * zoom}
                 viewBox={`0 0 ${activeScreen.width} ${activeScreen.height}`}
                 className="block select-none"
+                onContextMenu={(e) => {
+                  if (isPresentMode) return;
+                  e.preventDefault();
+                  if (
+                    e.target === e.currentTarget ||
+                    (e.target as Element).getAttribute('data-artboard-bg') === 'true'
+                  ) {
+                    setSelectedIds([]);
+                  }
+                  setContextMenu({ x: e.clientX, y: e.clientY });
+                }}
                 onMouseDown={(e) => {
+                  if (contextMenu) setContextMenu(null);
+                  if (e.button !== 0) return;
                   if (isSpaceHeld) return;
                   if (editingWidgetId) {
                     commitInlineEdit();
@@ -1962,7 +2329,25 @@ export default function App() {
                           ? 'cursor-default'
                           : 'cursor-move'
                       }
+                      onContextMenu={(e) => {
+                        if (isPresentMode) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+
+                        if (!selectedIds.includes(widget.id)) {
+                          const unitIds = widget.groupId
+                            ? visibleWidgets
+                                .filter((vw) => vw.groupId === widget.groupId)
+                                .map((vw) => vw.id)
+                            : [widget.id];
+                          setSelectedIds(unitIds);
+                        }
+
+                        setContextMenu({ x: e.clientX, y: e.clientY });
+                      }}
                       onMouseDown={(e) => {
+                        if (contextMenu) setContextMenu(null);
+                        if (e.button !== 0) return;
                         if (isSpaceHeld) return;
                         e.stopPropagation();
 
@@ -2656,6 +3041,119 @@ export default function App() {
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
       />
+
+      <AiWireframeModal
+        isOpen={aiModalState.open}
+        initialMode={aiModalState.mode}
+        activeScreenName={activeScreen.name}
+        activeDevice={activeScreen.device}
+        onClose={() => setAiModalState((prev) => ({ ...prev, open: false }))}
+        onApplyWireframe={(payload: AiGeneratedWireframePayload) => {
+          const dims = DEVICE_DIMENSIONS[payload.device];
+          if (payload.insertTarget === 'new-screen') {
+            const newScreenId = makeId('scr');
+            const newScreen: ScreenFrame = {
+              id: newScreenId,
+              name: payload.screenName,
+              device: payload.device,
+              width: dims.width,
+              height: dims.height,
+              widgets: payload.widgets,
+            };
+            commitProject((prev) => ({
+              ...prev,
+              screens: [...prev.screens, newScreen],
+            }));
+            setActiveScreenId(newScreenId);
+            setSelectedIds([]);
+            setEditingWidgetId(null);
+            showToast(
+              `Generated "${payload.screenName}" (${payload.widgets.length} widgets)`
+            );
+          } else if (payload.insertTarget === 'replace-screen') {
+            commitProject((prev) => ({
+              ...prev,
+              screens: prev.screens.map((s) =>
+                s.id === activeScreen.id
+                  ? {
+                      ...s,
+                      device: payload.device,
+                      width: dims.width,
+                      height: dims.height,
+                      widgets: payload.widgets,
+                    }
+                  : s
+              ),
+            }));
+            setSelectedIds([]);
+            setEditingWidgetId(null);
+            showToast(
+              `Replaced "${activeScreen.name}" with ${payload.widgets.length} AI widgets`
+            );
+          } else {
+            commitProject((prev) => ({
+              ...prev,
+              screens: prev.screens.map((s) =>
+                s.id === activeScreen.id
+                  ? {
+                      ...s,
+                      widgets: [...s.widgets, ...payload.widgets],
+                    }
+                  : s
+              ),
+            }));
+            setSelectedIds(payload.widgets.map((w) => w.id));
+            setEditingWidgetId(null);
+            showToast(`Added ${payload.widgets.length} AI widgets to "${activeScreen.name}"`);
+          }
+        }}
+      />
+
+      <PasteClipboardModal
+        isOpen={isPasteModalOpen}
+        onClose={() => setIsPasteModalOpen(false)}
+        onPasteText={(raw) => applyClipboardText(raw)}
+      />
+
+      {/* Canvas & Widget Right-Click Context Menu */}
+      {contextMenu && !isPresentMode && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          selectedWidgets={selectedWidgets}
+          sketchStyle={project.sketchStyle}
+          onCopyWidgets={() => void handleCopyWidgetsToClipboard()}
+          onDuplicate={duplicateSelected}
+          onDelete={deleteSelected}
+          onGroup={handleGroupSelected}
+          onUngroup={handleUngroupSelected}
+          onLayerAction={handleLayerSelected}
+          onToggleLock={handleToggleLockSelected}
+          onStartEdit={
+            selectedWidgets.length === 1 &&
+            selectedWidgets[0].type !== 'divider' &&
+            selectedWidgets[0].type !== 'vscrollbar' &&
+            selectedWidgets[0].type !== 'hscrollbar' &&
+            selectedWidgets[0].type !== 'arrow'
+              ? handleStartEditSelected
+              : undefined
+          }
+          onAlign={handleAlignSelected}
+          onSelectAll={handleSelectAll}
+          onQuickAdd={() => setIsQuickAddOpen(true)}
+          onCopyScreen={() => void handleCopyScreenToClipboard(activeScreen)}
+          onPasteFromClipboard={() => void handlePasteFromButton()}
+          onOpenAiGenerate={(mode) => setAiModalState({ open: true, mode })}
+          onChangeSketchStyle={(style) =>
+            commitProject((prev) => ({ ...prev, sketchStyle: style }))
+          }
+          onZoom={(delta) =>
+            setZoom((z) => Math.max(0.3, Math.min(2.5, Number((z + delta).toFixed(2)))))
+          }
+          onResetZoom={() => setZoom(1)}
+        />
+      )}
 
       {/* Non-blocking Toast Feedback */}
       {toastMessage && (

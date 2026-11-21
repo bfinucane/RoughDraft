@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
-import { Download, FileCode2, FileJson, Image as ImageIcon, Upload, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ClipboardPaste, Download, FileCode2, FileJson, Image as ImageIcon, Upload, X } from 'lucide-react';
 import { STARTER_TEMPLATES } from '../data/presets';
 import { ProjectData } from '../types/wireframe';
+import { parseRoughDraftClipboard } from '../utils/clipboard';
 
 interface TemplatesModalProps {
   isOpen: boolean;
@@ -228,9 +229,13 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   const shortcuts = [
+    ['Right-click', 'Open context menu (Delete, Duplicate, Group, Layering)'],
     ['/', 'Open Quick Add stencil launcher'],
     ['Double-click', 'Edit widget text / CSV rows inline'],
     ['Ctrl / Cmd + B, I, U', 'Format text as bold, italic, or underline'],
+    ['Ctrl / Cmd + C', 'Copy selected widgets, or current screen if none selected'],
+    ['Ctrl / Cmd + V', 'Paste widgets or entire screen (works across tabs)'],
+    ['Ctrl / Cmd + A', 'Select all widgets on artboard'],
     ['Shift + Click', 'Add or remove widget/group from selection'],
     ['Ctrl / Cmd + G', 'Group selected widgets into one entity'],
     ['Ctrl / Cmd + Shift + G', 'Ungroup selected group'],
@@ -263,15 +268,137 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
           </button>
         </div>
 
-        <div className="divide-y divide-slate-100 px-6 py-2">
+        <div className="max-h-[70vh] divide-y divide-slate-100 overflow-y-auto px-6 py-2">
           {shortcuts.map(([keyCombo, desc]) => (
-            <div key={keyCombo} className="flex items-center justify-between py-2.5 text-xs">
+            <div key={keyCombo} className="flex items-center justify-between gap-3 py-2.5 text-xs">
               <span className="text-slate-600">{desc}</span>
-              <kbd className="font-mono-tabular rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-medium text-slate-800 whitespace-nowrap">
+              <kbd className="font-mono-tabular rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-medium text-slate-800 whitespace-nowrap shrink-0">
                 {keyCombo}
               </kbd>
             </div>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface PasteClipboardModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onPasteText: (rawText: string) => boolean;
+}
+
+export const PasteClipboardModal: React.FC<PasteClipboardModalProps> = ({
+  isOpen,
+  onClose,
+  onPasteText,
+}) => {
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      setText('');
+      setError(null);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const tryApply = (value: string) => {
+    const parsed = parseRoughDraftClipboard(value);
+    if (!parsed) {
+      setError(
+        'Clipboard text does not contain valid RoughDraft screen or widget JSON. Copy a screen in another RoughDraft tab first, then press Ctrl/Cmd+V here.'
+      );
+      return;
+    }
+    const ok = onPasteText(value);
+    if (ok) {
+      onClose();
+    } else {
+      setError('Unable to import the pasted screen or widget data.');
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4 backdrop-blur-[1px]"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose();
+        }
+      }}
+    >
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">Paste Screen or Widgets</h2>
+            <p className="text-xs text-slate-500">
+              Press Ctrl/Cmd + V below to paste data copied from another RoughDraft window
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close paste dialog"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3 px-6 py-4">
+          <textarea
+            ref={textareaRef}
+            rows={5}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              setError(null);
+            }}
+            onPaste={(e) => {
+              const pasted = e.clipboardData.getData('text/plain');
+              if (pasted && parseRoughDraftClipboard(pasted)) {
+                e.preventDefault();
+                tryApply(pasted);
+              }
+            }}
+            placeholder='Press Ctrl/Cmd+V to paste copied RoughDraft JSON ({"roughdraft": "screen-v1", ...})'
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-800 placeholder:font-sans placeholder:text-slate-400 focus:border-blue-600 focus:bg-white focus:outline-none"
+          />
+
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!text.trim()}
+            onClick={() => tryApply(text)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            <ClipboardPaste className="h-3.5 w-3.5" />
+            <span>Paste into Project</span>
+          </button>
         </div>
       </div>
     </div>

@@ -16,6 +16,7 @@ import {
   Play,
   Plus,
   Redo2,
+  Save,
   Search,
   StickyNote,
   Strikethrough,
@@ -34,6 +35,13 @@ import {
   serializeWidgetsForClipboard,
   writeTextToClipboard,
 } from './utils/clipboard';
+import {
+  downloadProjectJsonCopy,
+  pickAndOpenProjectFile,
+  pickAndSaveProjectFile,
+  type RoughDraftFileHandle,
+  writeProjectToHandle,
+} from './utils/projectFile';
 import { applyFormatToInput } from './utils/textMarkup';
 import {
   AiWireframeModal,
@@ -202,12 +210,15 @@ export default function App() {
   }>({ open: false, mode: 'text' });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [linkedFileName, setLinkedFileName] = useState<string | null>(null);
+  const [isFileDirty, setIsFileDirty] = useState(false);
 
   const mainViewportRef = useRef<HTMLElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const interactionRef = useRef<DragInteraction | null>(null);
   const inlineInputRef = useRef<HTMLTextAreaElement | HTMLInputElement | null>(null);
   const internalClipboardRef = useRef<string>('');
+  const activeFileHandleRef = useRef<RoughDraftFileHandle | null>(null);
 
   // Ensure activeScreenId always resolves to an existing screen
   const activeScreen = useMemo<ScreenFrame>(() => {
@@ -260,6 +271,7 @@ export default function App() {
         if (next === prev) return prev;
         setPast((h) => [...h.slice(-(MAX_HISTORY - 1)), prev]);
         setFuture([]);
+        setIsFileDirty(true);
         return next;
       });
     },
@@ -274,6 +286,7 @@ export default function App() {
         setFuture((f) => [current, ...f]);
         return previous;
       });
+      setIsFileDirty(true);
       setSelectedIds([]);
       setEditingWidgetId(null);
       return prevPast.slice(0, -1);
@@ -288,6 +301,7 @@ export default function App() {
         setPast((p) => [...p.slice(-(MAX_HISTORY - 1)), current]);
         return next;
       });
+      setIsFileDirty(true);
       setSelectedIds([]);
       setEditingWidgetId(null);
       return rest;
@@ -967,6 +981,71 @@ export default function App() {
     setIsPasteModalOpen(true);
   }, [applyClipboardText]);
 
+  const handleSaveFileAs = useCallback(async () => {
+    try {
+      const res = await pickAndSaveProjectFile(project);
+      if (res.status === 'saved') {
+        activeFileHandleRef.current = res.handle;
+        setLinkedFileName(res.fileName);
+        setIsFileDirty(false);
+        showToast(`Saved to "${res.fileName}"`);
+        return;
+      }
+      if (res.status === 'cancelled') return;
+
+      const downloadedName = downloadProjectJsonCopy(project);
+      showToast(
+        `Downloaded "${downloadedName}" (open in Chrome/Edge standalone to overwrite in-place)`
+      );
+    } catch {
+      const downloadedName = downloadProjectJsonCopy(project);
+      showToast(`Downloaded "${downloadedName}"`);
+    }
+  }, [project, showToast]);
+
+  const handleSaveFile = useCallback(async () => {
+    const existingHandle = activeFileHandleRef.current;
+    if (existingHandle) {
+      try {
+        await writeProjectToHandle(existingHandle, project);
+        setIsFileDirty(false);
+        showToast(`Saved changes to "${existingHandle.name}"`);
+        return;
+      } catch {
+        // Handle permission revoked or stale handle; prompt Save As
+      }
+    }
+    await handleSaveFileAs();
+  }, [handleSaveFileAs, project, showToast]);
+
+  const handleOpenFilePicker = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await pickAndOpenProjectFile();
+      if (res.status === 'opened') {
+        activeFileHandleRef.current = res.handle;
+        setLinkedFileName(res.fileName);
+        setIsFileDirty(false);
+        commitProject(res.data);
+        setIsFileDirty(false);
+        setActiveScreenId(res.data.screens[0]?.id || '');
+        setSelectedIds([]);
+        setEditingWidgetId(null);
+        showToast(`Opened "${res.fileName}"`);
+        return true;
+      }
+      if (res.status === 'cancelled') {
+        return true;
+      }
+      if (res.status === 'invalid') {
+        showToast(res.message);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [commitProject, showToast]);
+
   // Inline Double-Click Editing (zone-aware for header vs body/placeholder/links)
   const startInlineEdit = useCallback(
     (widget: WireframeWidget, clickPoint?: { x: number; y: number }) => {
@@ -1073,6 +1152,14 @@ export default function App() {
           return;
         }
         setSelectedIds([]);
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        if (!isPresentMode) {
+          e.preventDefault();
+          void handleSaveFile();
+        }
+        return;
       }
 
       if (
@@ -1244,6 +1331,7 @@ export default function App() {
     handleLayerSelected,
     handleRedo,
     handleSelectAll,
+    handleSaveFile,
     handleUndo,
     handleUngroupSelected,
     aiModalState.open,
@@ -1545,19 +1633,6 @@ export default function App() {
     img.src = url;
   };
 
-  const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(project, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.roughdraft.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Saved project JSON file');
-  };
-
   // Filtered stencils in left sidebar
   const filteredStencils = useMemo(() => {
     const q = stencilQuery.trim().toLowerCase();
@@ -1713,11 +1788,31 @@ export default function App() {
               type="text"
               aria-label="Project Name"
               value={project.name}
-              onChange={(e) =>
-                setProject((prev) => ({ ...prev, name: e.target.value }))
-              }
+              onChange={(e) => {
+                const nextName = e.target.value;
+                setProject((prev) => ({ ...prev, name: nextName }));
+                setIsFileDirty(true);
+              }}
               className="w-44 truncate rounded-md border border-transparent bg-transparent px-2 py-1 text-xs font-semibold text-slate-800 hover:border-slate-200 hover:bg-white focus:border-blue-600 focus:bg-white focus:outline-none sm:w-52"
             />
+
+            <button
+              type="button"
+              onClick={() => void handleSaveFile()}
+              title={
+                linkedFileName
+                  ? `Save changes to ${linkedFileName} (Ctrl/Cmd+S)`
+                  : 'Save project file (Ctrl/Cmd+S)'
+              }
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors whitespace-nowrap shrink-0 ${
+                linkedFileName && isFileDirty
+                  ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span>{linkedFileName ? (isFileDirty ? 'Save*' : 'Save') : 'Save File'}</span>
+            </button>
 
             <div className="h-4 w-px bg-slate-200" />
 
@@ -3013,7 +3108,10 @@ export default function App() {
         isOpen={isTemplatesOpen}
         onClose={() => setIsTemplatesOpen(false)}
         onSelectTemplate={(nextProj) => {
+          activeFileHandleRef.current = null;
+          setLinkedFileName(null);
           commitProject(nextProj);
+          setIsFileDirty(false);
           setActiveScreenId(nextProj.screens[0]?.id || '');
           setSelectedIds([]);
           setEditingWidgetId(null);
@@ -3025,15 +3123,22 @@ export default function App() {
         isOpen={isExportOpen}
         screenName={activeScreen.name}
         projectName={project.name}
+        linkedFileName={linkedFileName}
+        isFileDirty={isFileDirty}
         onClose={() => setIsExportOpen(false)}
         onExportPng={handleExportPng}
         onExportSvg={handleExportSvg}
-        onExportJson={handleExportJson}
-        onImportJson={(imported) => {
+        onSaveFile={handleSaveFile}
+        onSaveFileAs={handleSaveFileAs}
+        onOpenFilePicker={handleOpenFilePicker}
+        onImportJson={(imported, fileName) => {
+          activeFileHandleRef.current = null;
+          setLinkedFileName(null);
           commitProject(imported);
+          setIsFileDirty(false);
           setActiveScreenId(imported.screens[0]?.id || '');
           setSelectedIds([]);
-          showToast(`Opened "${imported.name}"`);
+          showToast(`Opened "${fileName || imported.name}"`);
         }}
       />
 

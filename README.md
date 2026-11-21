@@ -15,7 +15,7 @@
 - **Clickable Low-Fidelity Prototypes** — Link any button, tab, card, or control to another screen and launch **Present Prototype** mode to walk stakeholders through interactive flows.
 - **Plain-Text Wireframe Syntax** — Populate checklists, radio groups, tabs, navbars, and multi-column data tables using simple plain-text shorthand.
 - **Starter Wireframe Kits** — Jumpstart projects with multi-screen SaaS, Mobile Commerce, Product Landing Page, or Blank Sketchboard templates.
-- **Local Auto-Save & Crisp Export** — Projects save automatically in `localStorage` and can be exported at any time as **2× PNG**, **Vector SVG**, or portable **`.json`** project files.
+- **Local Auto-Save, In-Place File Saving & Crisp Export** — Projects auto-save in `localStorage`, overwrite linked `.roughdraft.json` files in-place (`Ctrl / Cmd + S` in Chrome/Edge standalone), and export cleanly as **2× PNG** or **Vector SVG**.
 
 ---
 
@@ -72,6 +72,7 @@ Double-click any widget on the canvas (or edit its fields in the right-hand Insp
 | Shortcut | Action |
 | :--- | :--- |
 | `Right-click` | Open context menu (Delete, Duplicate, Group, Layering, Lock, Align) |
+| `Ctrl / Cmd + S` | Save changes to linked `.roughdraft.json` file (or prompt Save As) |
 | `/` | Open Quick Add stencil launcher |
 | `Ctrl / Cmd + C` | Copy selected widgets, or current screen if none selected |
 | `Ctrl / Cmd + V` | Paste widgets or entire screen (works across RoughDraft tabs/windows) |
@@ -158,6 +159,7 @@ NODE_ENV=production npm start
     │   └── wireframe.ts        # TypeScript data models for projects, screens, and widgets
     └── utils/
         ├── clipboard.ts        # Cross-instance screen & widget clipboard serialization
+        ├── projectFile.ts      # File System Access API in-place save/open + fallback
         └── sketchPath.ts       # Deterministic seeded sketchy SVG path generators
 ```
 
